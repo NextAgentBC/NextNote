@@ -331,4 +331,4 @@ Nothing leaves your Mac unless you choose a remote AI provider — and even then
 
 ---
 
-*nextNote is open source under the MIT license. Enjoy.*
+*NextNote is open source under the Apache License 2.0. Enjoy.*

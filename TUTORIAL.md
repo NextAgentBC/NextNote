@@ -451,9 +451,7 @@ There is no test target yet. Highest-value candidates when someone wants to add 
 
 ## 13. License
 
-(Pick one when you publish — MIT or Apache 2.0 is friendliest for a SwiftUI OSS app.)
-
-Dependencies: MLX (MIT), ZIPFoundation (MIT), SwiftSoup (MIT), Apple platform frameworks.
+Apache License 2.0 — see `LICENSE` and `NOTICE` at the repo root. Third-party dependencies (MLX, ZIPFoundation, SwiftSoup, tokenizers, HF API) are MIT-licensed and listed in `NOTICE`.
 
 ---
 

@@ -1,6 +1,6 @@
 # NextNote
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![macOS 14+](https://img.shields.io/badge/macOS-14%2B-lightgrey.svg)](https://www.apple.com/macos/)
 [![Swift 6.0](https://img.shields.io/badge/swift-6.0-orange.svg)](https://swift.org)
 [![Release](https://img.shields.io/github/v/release/NextAgentBC/NextNote?include_prereleases)](https://github.com/NextAgentBC/NextNote/releases)
@@ -94,4 +94,4 @@ v0.1. Features listed above are working. Test target not added yet — high-valu
 
 ## License
 
-Not yet set — pick MIT or Apache-2.0 before publishing.
+Apache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).

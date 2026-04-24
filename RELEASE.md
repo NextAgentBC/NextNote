@@ -1,6 +1,6 @@
 # Release Checklist
 
-Maintainer-facing notes for cutting a nextNote release. Works for ad-hoc-signed distribution (free Apple ID / no developer program needed). If you later enroll in the Apple Developer Program, the notarization steps at the bottom become relevant.
+Maintainer-facing notes for cutting a NextNote (Apache-2.0) release. Works for ad-hoc-signed distribution (free Apple ID / no developer program needed). If you later enroll in the Apple Developer Program, the notarization steps at the bottom become relevant.
 
 ---
 
