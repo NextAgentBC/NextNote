@@ -9,6 +9,8 @@
 	<string>NextNote</string>
 	<key>CFBundleName</key>
 	<string>NextNote</string>
+	<key>NSHumanReadableCopyright</key>
+	<string>Copyright © 2026 NextAgentBC. Licensed under the Apache License 2.0.</string>
 	<!-- ATS left at the default (HTTPS only). If you want to talk to a
 	     local plain-HTTP LLM server (e.g. http://localhost:11434 for Ollama
 	     or http://100.x.x.x on a Tailscale LAN), add an NSAppTransportSecurity
