@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- User-visible app name. PRODUCT_NAME stays "nextNote" so the bundle
+	     path + legacy defaults keys stay stable; the display name drives
+	     menu bar, dock, and the about box instead. -->
+	<key>CFBundleDisplayName</key>
+	<string>NextNote</string>
+	<key>CFBundleName</key>
+	<string>NextNote</string>
+	<!-- ATS left at the default (HTTPS only). If you want to talk to a
+	     local plain-HTTP LLM server (e.g. http://localhost:11434 for Ollama
+	     or http://100.x.x.x on a Tailscale LAN), add an NSAppTransportSecurity
+	     → NSExceptionDomains entry for that host. Example for Ollama:
+	        <key>NSAppTransportSecurity</key>
+	        <dict>
+	          <key>NSExceptionDomains</key>
+	          <dict>
+	            <key>localhost</key>
+	            <dict>
+	              <key>NSExceptionAllowsInsecureHTTPLoads</key><true/>
+	            </dict>
+	          </dict>
+	        </dict>
+	     See docs/LLM_SETUP.md for details. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>localhost</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
+		</dict>
+	</dict>
+</dict>
+</plist>
