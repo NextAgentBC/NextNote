@@ -28,14 +28,21 @@ struct LibrarySidebar: View {
             NotesSection()
                 .frame(maxHeight: .infinity)
 
+            // Trays share one scrollable region so a short window doesn't
+            // clip the last tray off-screen (previous bug: Assets was
+            // invisible on default window heights because Ebooks + Media
+            // together exceeded the bottom half).
             Divider()
-            ebooksTray
-
-            Divider()
-            mediaTray
-
-            Divider()
-            assetsTray
+            ScrollView {
+                VStack(spacing: 0) {
+                    assetsTray
+                    Divider()
+                    ebooksTray
+                    Divider()
+                    mediaTray
+                }
+            }
+            .frame(maxHeight: 420)
         }
         .onChange(of: appState.triggerRescanLibrary) { _, v in
             if v {
