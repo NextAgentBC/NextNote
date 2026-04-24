@@ -39,6 +39,13 @@ targets:
       - path: nextNote
         excludes:
           - "**/.DS_Store"
+          - "Resources/vault-template"
+      # Treat vault-template as a single folder reference so the whole
+      # directory tree is copied into the .app bundle as Resources/vault-template/,
+      # preserving nested paths (skills, templates, memory/, etc.).
+      - path: nextNote/Resources/vault-template
+        type: folder
+        buildPhase: resources
     dependencies:
       - package: mlx-swift-lm
         product: MLXLLM

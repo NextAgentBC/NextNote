@@ -8,6 +8,8 @@ struct LibrarySetupView: View {
     @EnvironmentObject private var libraryRoots: LibraryRoots
     @State private var pendingPicks: [LibraryRoots.Kind: URL] = [:]
     @State private var error: String?
+    @State private var seedPreset: Bool = true
+    @State private var presetSummary: String?
 
     private func chosen(for kind: LibraryRoots.Kind) -> URL {
         pendingPicks[kind]
@@ -25,11 +27,22 @@ struct LibrarySetupView: View {
             }
             .padding(.horizontal, 30)
 
+            presetToggle
+                .padding(.horizontal, 30)
+
             if let error {
                 Text(error)
                     .font(.caption)
                     .foregroundStyle(.red)
                     .padding(.horizontal, 30)
+            }
+
+            if let presetSummary {
+                Text(presetSummary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 30)
+                    .multilineTextAlignment(.center)
             }
 
             HStack(spacing: 10) {
@@ -102,6 +115,25 @@ struct LibrarySetupView: View {
         return path.hasPrefix(home) ? "~" + path.dropFirst(home.count) : path
     }
 
+    private var presetToggle: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Toggle(isOn: $seedPreset) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Use AI Soul preset")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("Seeds Notes root with Soul + skills + templates for Claude Code / Gemini CLI workflows. Won't overwrite existing files.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .toggleStyle(.checkbox)
+            Spacer()
+        }
+        .padding(14)
+        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+    }
+
     // MARK: - Actions
 
     private func pick(_ kind: LibraryRoots.Kind) async {
@@ -132,5 +164,29 @@ struct LibrarySetupView: View {
             }
         }
         self.error = nil
+
+        if seedPreset, let notesRoot = libraryRoots.url(for: .notes) {
+            do {
+                let report = try VaultPresetSeeder.seed(into: notesRoot)
+                presetSummary = describe(report)
+            } catch {
+                self.error = "Preset seeding failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func describe(_ report: VaultPresetSeeder.Report) -> String {
+        var parts: [String] = []
+        if !report.copied.isEmpty {
+            parts.append("Copied \(report.copied.count) files")
+        }
+        if !report.skipped.isEmpty {
+            parts.append("Kept \(report.skipped.count) existing (identical)")
+        }
+        if !report.conflicts.isEmpty {
+            parts.append("Skipped \(report.conflicts.count) that differ — see Notes root")
+        }
+        if parts.isEmpty { return "Preset already applied." }
+        return "AI Soul preset applied: " + parts.joined(separator: ", ") + "."
     }
 }
