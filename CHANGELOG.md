@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.1 — 2026-04-24
+
+### Fixes
+
+- **YouTube video playback — silent 4K / 1440p downloads.** YouTube only ships H.264 up to 1080p; higher tiers come as VP9 or AV1, which AVPlayer can't decode on older macOS or Intel Macs, so the picture went blank while audio still played. After a successful download, the file is now probed and — if the video track is VP9 / AV1 — re-encoded in place to HEVC (`hvc1`) via VideoToolbox hardware encode. H.264 / HEVC downloads pass through unchanged.
+- **Media sidebar didn't refresh after a YouTube download.** New files landed on disk but the left sidebar's folder tree only re-scanned on window focus / every 15 s, so a fresh download stayed invisible until the user clicked away and back. Downloads now trigger an immediate catalog rescan.
+- **ffmpeg hang on post-download transcode.** The transcoder launched ffmpeg without `-nostdin`, so it stalled at ffmpeg's interactive prompt. Both the in-app transcoder and `scripts/repair-videos.sh` now pass `-nostdin`.
+
+### Features
+
+- **Media sidebar right-click menu.**
+  - Right-click a folder group → **Play All**, **Play Shuffled**, **Enqueue**, **Reveal in Finder**.
+  - Right-click a single file → **Play**, **Enqueue**, **Reveal in Finder**.
+  - Any video in the queue automatically pops the Video Vibe window.
+- **`scripts/repair-videos.sh`** — batch-repair VP9 / AV1 files already on disk from 0.1.0 downloads. Usage: `scripts/repair-videos.sh <folder> [--dry-run]`. Re-encodes only the files that need it; leaves H.264 / HEVC alone.
+
 ## 0.1.0 — 2026-04-23
 
 Initial public release.

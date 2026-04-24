@@ -35,3 +35,10 @@ Package.resolved
 .env
 .env.local
 AGENTS.md
+.claude/
+
+# Local screen recordings / throwaway demo captures — the committed demo
+# assets (alice-in-wonderland.epub, sample-clip.mp4) stay; anything else
+# is the author's local recording that shouldn't bloat the repo.
+demo/*.mov
+demo/nextnote-demo.mp4

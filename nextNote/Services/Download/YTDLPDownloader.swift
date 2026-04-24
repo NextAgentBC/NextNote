@@ -301,7 +301,125 @@ enum YTDLPDownloader {
         } else {
             url = folder.appendingPathComponent(path)
         }
-        return Result(outputURL: url, metadata: metadata)
+
+        // YouTube ships 1440p/4K only as VP9/AV1. AVPlayer on older/Intel Macs
+        // can't decode those → silent video. Transcode to HEVC (hvc1) so
+        // playback works everywhere. H.264 / HEVC stay untouched.
+        let finalURL: URL
+        if case .video = mode, let ffmpeg {
+            finalURL = try await Transcoder.ensurePlayable(
+                url: url,
+                ffmpeg: ffmpeg,
+                progress: progress
+            )
+        } else {
+            finalURL = url
+        }
+
+        return Result(outputURL: finalURL, metadata: metadata)
+    }
+
+    // MARK: - Post-download codec normalization
+
+    enum Transcoder {
+        /// Codecs AVFoundation can always render on every Mac. Anything else
+        /// (vp9, av1, …) gets re-encoded to HEVC via VideoToolbox HW encode.
+        private static let playableCodecs: Set<String> = ["h264", "hevc", "h265"]
+
+        static func ensurePlayable(
+            url: URL,
+            ffmpeg: URL,
+            progress: @Sendable @escaping (Double, String) -> Void
+        ) async throws -> URL {
+            guard let codec = await probeVideoCodec(url: url, ffmpeg: ffmpeg) else {
+                return url
+            }
+            if playableCodecs.contains(codec) { return url }
+
+            progress(-1, "Transcoding \(codec) → HEVC for playback…")
+
+            let tmp = url
+                .deletingPathExtension()
+                .appendingPathExtension("transcoding.mp4")
+            try? FileManager.default.removeItem(at: tmp)
+
+            let p = Process()
+            p.executableURL = ffmpeg
+            p.arguments = [
+                "-y",
+                "-hide_banner",
+                "-nostats",
+                "-nostdin",
+                "-i", url.path,
+                "-c:v", "hevc_videotoolbox",
+                "-tag:v", "hvc1",
+                "-q:v", "65",
+                "-c:a", "copy",
+                "-movflags", "+faststart",
+                tmp.path,
+            ]
+            let errPipe = Pipe()
+            p.standardError = errPipe
+            p.standardOutput = Pipe()
+
+            do {
+                try p.run()
+            } catch {
+                throw DLError.launch("ffmpeg: \(error.localizedDescription)")
+            }
+
+            let errBox = StreamBox()
+            errPipe.fileHandleForReading.readabilityHandler = { h in
+                let data = h.availableData
+                guard !data.isEmpty, let s = String(data: data, encoding: .utf8) else { return }
+                errBox.append(s)
+            }
+
+            await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+                p.terminationHandler = { _ in cont.resume() }
+            }
+            errPipe.fileHandleForReading.readabilityHandler = nil
+
+            guard p.terminationStatus == 0 else {
+                try? FileManager.default.removeItem(at: tmp)
+                let tail = String(errBox.joined.suffix(500))
+                throw DLError.nonZeroExit(p.terminationStatus, "Transcode failed: \(tail)")
+            }
+
+            // Replace original with transcoded copy. Keep same path so caller
+            // (catalog, dedup, etc.) sees a single stable URL.
+            try FileManager.default.removeItem(at: url)
+            try FileManager.default.moveItem(at: tmp, to: url)
+            return url
+        }
+
+        /// Parse `ffmpeg -i <file>` stderr for the first `Video:` stream's
+        /// codec name. ffmpeg exits with status 1 (no output file) but always
+        /// prints stream info to stderr first — that's what we want.
+        private static func probeVideoCodec(url: URL, ffmpeg: URL) async -> String? {
+            let p = Process()
+            p.executableURL = ffmpeg
+            p.arguments = ["-hide_banner", "-i", url.path]
+            let err = Pipe()
+            p.standardError = err
+            p.standardOutput = Pipe()
+            do { try p.run() } catch { return nil }
+
+            let data = err.fileHandleForReading.readDataToEndOfFile()
+            await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+                p.terminationHandler = { _ in cont.resume() }
+            }
+            guard let text = String(data: data, encoding: .utf8) else { return nil }
+
+            for rawLine in text.split(whereSeparator: { $0 == "\n" || $0 == "\r" }) {
+                let line = String(rawLine)
+                guard let r = line.range(of: "Video: ") else { continue }
+                let after = line[r.upperBound...]
+                let codec = after.prefix(while: { $0 != " " && $0 != "," })
+                return codec.lowercased()
+            }
+            return nil
+        }
     }
 
     // Thread-safe line collector for the readabilityHandler callbacks, which

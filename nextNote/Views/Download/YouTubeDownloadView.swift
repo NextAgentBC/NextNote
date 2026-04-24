@@ -8,6 +8,7 @@ import AppKit
 // download folder. Both are persisted as security-scoped bookmarks.
 struct YouTubeDownloadView: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var appState: AppState
     @StateObject private var locator = YTDLPLocator.shared
     @StateObject private var library = MediaLibrary.shared
     @StateObject private var player = AmbientPlayer.shared
@@ -338,6 +339,14 @@ struct YouTubeDownloadView: View {
                             VideoVibeWindowController.shared.show()
                         }
                     }
+                    // Re-scan the Media catalog so the new file shows up
+                    // in the left sidebar folder tree immediately — by
+                    // default the catalog only auto-refreshes on window
+                    // focus / every 15s, which left fresh downloads invisible
+                    // until the user re-focused. Fires even when addFile
+                    // returns nil (duplicate) because the file is still on
+                    // disk and belongs in the folder tree.
+                    appState.triggerRescanLibrary = true
                 }
             } catch {
                 await MainActor.run {

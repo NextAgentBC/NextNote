@@ -198,11 +198,72 @@ struct LibrarySidebar: View {
         } isTargeted: { active in
             hoveredDropTarget = active ? key : (hoveredDropTarget == key ? nil : hoveredDropTarget)
         }
+        .contextMenu {
+            Button("Play All") { playGroup(group, shuffle: false) }
+                .disabled(group.items.isEmpty)
+            Button("Play Shuffled") { playGroup(group, shuffle: true) }
+                .disabled(group.items.isEmpty)
+            Button("Enqueue") { enqueueGroup(group) }
+                .disabled(group.items.isEmpty)
+            Divider()
+            Button("Reveal in Finder") {
+                #if os(macOS)
+                if let url = folderURL {
+                    NSWorkspace.shared.activateFileViewerSelecting([url])
+                }
+                #endif
+            }
+            .disabled(folderURL == nil)
+        }
 
         if expanded {
             ForEach(group.items) { item in
                 mediaRow(item, indent: 30, action: { onTap(item) })
             }
+        }
+    }
+
+    // MARK: - Play helpers
+
+    private func tracks(from group: MediaCatalog.MediaGroup) -> [Track] {
+        group.items.map {
+            Track(id: UUID(), url: $0.url, title: $0.title, bookmark: nil)
+        }
+    }
+
+    /// Queue every file under `group` and start playback. Pop the video
+    /// window when any item is video so the user sees the picture.
+    private func playGroup(_ group: MediaCatalog.MediaGroup, shuffle: Bool) {
+        var list = tracks(from: group)
+        guard !list.isEmpty else { return }
+        if shuffle { list.shuffle() }
+        AmbientPlayer.shared.setQueue(list)
+        if list.contains(where: { MediaKind.from(url: $0.url) == .video }) {
+            VideoVibeWindowController.shared.show()
+        }
+    }
+
+    private func enqueueGroup(_ group: MediaCatalog.MediaGroup) {
+        let list = tracks(from: group)
+        guard !list.isEmpty else { return }
+        AmbientPlayer.shared.enqueue(list)
+        if list.contains(where: { MediaKind.from(url: $0.url) == .video }) {
+            VideoVibeWindowController.shared.show()
+        }
+    }
+
+    private func playFile(_ item: MediaCatalog.MediaFile) {
+        AmbientPlayer.shared.playURL(item.url, title: item.title)
+        if MediaKind.from(url: item.url) == .video {
+            VideoVibeWindowController.shared.show()
+        }
+    }
+
+    private func enqueueFile(_ item: MediaCatalog.MediaFile) {
+        let t = Track(id: UUID(), url: item.url, title: item.title, bookmark: nil)
+        AmbientPlayer.shared.enqueue([t])
+        if MediaKind.from(url: item.url) == .video {
+            VideoVibeWindowController.shared.show()
         }
     }
 
@@ -252,6 +313,9 @@ struct LibrarySidebar: View {
         .contentShape(Rectangle())
         .onTapGesture(perform: action)
         .contextMenu {
+            Button("Play") { playFile(item) }
+            Button("Enqueue") { enqueueFile(item) }
+            Divider()
             Button("Reveal in Finder") {
                 #if os(macOS)
                 NSWorkspace.shared.activateFileViewerSelecting([item.url])
