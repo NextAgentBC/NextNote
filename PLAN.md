@@ -226,3 +226,273 @@ SwiftData 应付得了：
 2. 把 PureText 的 Swift 源码拷进来，改名、清掉 dead code（DocumentVersion、Speech 授权里没用的）
 3. 把 VoiceInput 的 `STTEngine` / `AppleSpeechEngine` / `CloudSTTEngine` / `WhisperEngine` / `TextPostProcessor` / `VocabularyDB` / `LLMCache` 抽成 `SpeechToText` SPM
 4. 编辑器工具栏加 🎤 按钮，按住录音、松开插入光标处 — 这一步就能让 nextNote 有雏形了
+
+---
+
+## 7. 路线图 v2（2026-04-24 起，living doc）
+
+> §1–§6 是项目起源的整合方案（PureText + VoiceInput → nextNote），作为档案保留。§7 起是 0.1.2 之后的前瞻路线图，会不停添加 / 修正，每次大 feature 落地就把对应条目从这里移到 `CHANGELOG.md` 的 Released 区块。
+
+### 7.1 总体方向
+
+五条可并行的 track：
+
+| Track | 主题 | 优先级 | 目标版本 |
+|---|---|---|---|
+| **A. 媒体创作** | 图片编辑 / 音频编辑 / 录屏 | 高（补齐"从素材到笔记"闭环） | v0.2 |
+| **B. AI provider 扩展** | Claude / GPT / 国产模型原生接入 | 中 | v0.2 |
+| **C. 增强 AI 用例** | 长上下文总结 / 迭代改写 / 语义搜索 / Auto-link / Notebook RAG | 中（依赖 Track B 的强模型） | v0.3 |
+| **D. 同步** | iCloud Sync 一键迁移 | 低（现在放 iCloud Drive 就能同步） | v0.3+ |
+| **E. UX 持续优化** | `UX_AUDIT.md` 里的 P1/P2/P3 | 持续 | 每个 release |
+
+---
+
+### 7.2 Track A — 媒体创作
+
+#### A1. 🖼️ 图片编辑
+
+**MVP 范围**
+
+- 裁剪、旋转（90° / 任意角）、水平/垂直翻转
+- 亮度 / 对比度 / 饱和度（Core Image `CIColorControls`）
+- 简单标注：箭头、矩形、文字、马克笔（PencilKit 或 `NSBezierPath` 叠加层）
+- 一键导出 `<原文件>-edit.png`，原图保留
+
+**入口**
+
+- 素材库预览 sheet 里加铅笔按钮（和视频的剪刀对称）
+- 素材库 / Finder 图片右键 → "Edit Image…"
+
+**实现路径**
+
+- 新建 `Views/Assets/ImageEditorView.swift`
+- 调色用 Core Image filter graph（非破坏性，状态是几个数值参数）
+- 标注用 SwiftUI `Canvas` 层叠在图片上，用户笔画存成 `[Stroke]` 数组
+- 可选："保存一份旁路 `.nxedit.json` 记录操作栈" → 日后二次编辑
+- 最终导出走 `CIContext.createCGImage` → PNG/JPG
+
+**非目标（留给未来）**
+
+- 图层 / 蒙版 / 混合模式
+- RAW / HDR
+- AI 抠图、inpainting、生图（归到 Track C）
+
+#### A2. 🎚️ 音频编辑
+
+**MVP**
+
+- Trim（波形上拖两端标记）
+- 渐入 / 渐出（两侧各拖一个滑块）
+- 音量标准化（LUFS 目标 -14，`AVAudioUnitEQ` + 简单峰值检测）
+- 变速（保持音调，`AVAudioUnitTimePitch`）
+
+**入口**
+
+- Media Library / Asset Library 里音频预览界面，和视频的 Trim 按钮对称
+
+**实现**
+
+- 组合层：`AVMutableComposition` + `AVAudioMix`
+- 波形绘制：`AVAssetReader` 抽 PCM → 按屏幕宽度下采样成 `(min, max)` bucket → `Canvas` 画垂直线。每个 track ≤ 屏宽个采样，绘制 <16 ms
+- 导出：`AVAssetExportSession` → m4a (AAC) 或 wav
+- 文件命名同图片：`<原文件>-edit.m4a`
+
+**进阶（可选，单独 MR）**
+
+- 降噪：RNNoise 本地模型（有开源 Swift 包装）或谱减法
+- 多段编辑（cut-paste）需要把单轨扩成 `AVMutableCompositionTrack` 时间线
+
+#### A3. 📹 录屏
+
+**方案**：ScreenCaptureKit（macOS 12.3+，苹果官方推荐，低 CPU）
+
+**UI**
+
+- 菜单栏图标（或主窗菜单） → 三个模式：🖥️ 全屏 / 🪟 选窗口 / ▭ 选区域
+- 可选 🎤 麦克风 + 🔊 系统声
+- 录制中：屏幕角落一个 Stop 小按钮（不是整个 HUD），不打扰录制内容
+- 快捷键：⌘⇧5（和系统截屏一致的直觉），或自定义
+
+**输出**
+
+- H.264 mp4，写进 Media 根目录或 Assets（设置里选）
+- 录完自动弹 Video Vibe 窗预览
+- 可选 toggle："录完直接跳进 Trim 编辑器" → 无缝衔接 A1
+
+**权限**
+
+- macOS 15+ 的 Screen Recording TCC 授权流程，首次录制前弹引导 UI（说明为什么要、点哪里开）
+
+**扩展点**
+
+- 录制核心抽成 `ScreenRecordingService`，将来加 "GIF 导出" / "自动字幕"（走 Apple Speech 或 Whisper）只需上层接
+
+---
+
+### 7.3 Track B — 多模型 provider
+
+#### B1. Preset dropdown（最低投入、最高回报）
+
+**问题**：国产模型大部分已经兼容 OpenAI API 格式，现有 Remote provider 其实已经能用。但用户要自己查 baseURL 和 model name，门槛太高。
+
+**方案**：加一个预设选择器
+
+- 新建 `Models/ProviderPreset.swift`：
+
+  ```swift
+  struct ProviderPreset: Identifiable {
+      let id: String              // "deepseek"
+      let displayName: String     // "DeepSeek"
+      let baseURL: String         // "https://api.deepseek.com/v1"
+      let defaultModel: String    // "deepseek-chat"
+      let apiKeyHelpURL: URL      // 官方申请 key 的页面
+      let requiresThinkingToggle: Bool
+      let contextWindow: Int      // 供 UI 展示
+      let notes: String?
+  }
+  ```
+
+- Settings → AI 的 Remote provider 下加 **Preset** dropdown，选了之后自动填 baseURL / model / thinking toggle
+- 内置预设：DeepSeek、通义千问 Qwen、Kimi、豆包、智谱 GLM、OpenAI、xAI Grok、Mistral、Groq、自定义
+
+**工作量**：半天
+
+#### B2. Claude 原生 provider
+
+**为什么原生**：Claude 的 Messages API 和 OpenAI Chat Completions 结构不同；prompt caching / tool use / extended thinking 都必须走原生才能开。将来 Agent SDK / MCP 也是原生协议。
+
+**方案**
+
+- `Services/AI/AnthropicProvider.swift` conform `LLMProvider`
+- `URLSession.bytes(for:)` 做流式，自己解 SSE（~150 行）
+- Key 放 Keychain
+- 预设：`claude-opus-4-7` / `claude-sonnet-4-6` / `claude-haiku-4-5-20251001`
+- Prompt caching 在构造请求时对 system prompt + 长上下文加 `cache_control: { type: "ephemeral" }`
+
+**不引第三方**：官方 Swift SDK 不成熟，手写 ~200 行更干净。
+
+#### B3. OpenAI 原生 provider
+
+同样原因 —— 原生解锁 structured outputs / function calling / `reasoning_effort`。**和 B2 共用一套 SSE 解析工具**。
+
+#### B4. 成本可见化
+
+- `LLMProvider` 协议加：
+
+  ```swift
+  struct Usage {
+      let inputTokens: Int
+      let outputTokens: Int
+      let cachedInputTokens: Int?
+      let estimatedCostUSD: Decimal
+  }
+  var lastUsage: Usage? { get }
+  ```
+
+- AI 面板右上角小字显示 "≈ $0.003"
+- Settings → AI → 本月累计 / 上月累计 + 按 provider 拆分
+
+---
+
+### 7.4 Track C — 增强 AI 用例
+
+> 这些功能弱模型做不好（4B MLX 会翻车）。实现时给 `LLMProvider` 加 `capabilities: Set<Capability>` 位（`.longContext` / `.toolUse` / `.reasoning` / `.jsonMode`），用户选了不匹配能力的 provider 时在功能入口显示 "需要更强模型" 的 banner。
+
+#### C1. 长上下文总结
+
+- 整个文件夹 / 整本笔记的 brief
+- Map-reduce：
+  1. **Map** — 对每条 note 用 `summarize(note)` 出要点（缓存 key = note 内容 hash）
+  2. **Reduce** — 把所有要点拼起来让模型做 meta-summary（缓存 key = 所有 map 结果的 hash）
+- 缓存命中率会很高：只要 note 没改，map 结果复用；只要 folder 内 note 集合不变，reduce 也复用
+
+#### C2. 迭代改写（Polish v2）
+
+- 流程：`generate → self-critique → revise`
+  1. 第一次 polish → `v1`
+  2. 让模型挑 `v1` 的 3 个最大问题（critique）
+  3. 按 critique 重写 → `v2`
+- UI：Polish 按钮旁加 **🔁 Iterate** toggle，开了就跑 3 步版本
+- 成本会是单次 polish 的 ~3 倍，B4 的成本可见化在这里尤其重要
+
+#### C3. 语义搜索
+
+**栈**
+
+- Embedding：Voyage-3-large（云）/ `text-embedding-3-small`（OpenAI）/ `text-embedding-004`（Gemini）/ BGE-M3（本地 via llama.cpp）
+- 向量库：SQLite + [`sqlite-vec`](https://github.com/asg017/sqlite-vec) 扩展。不引 Chroma / Qdrant，保留零后台服务
+- 索引策略：FSEventStream 监听 `<notes>/`，mtime 变了才 re-embed 该文件；按段落 chunk（~500 token 重叠 50）
+
+**UI**
+
+- ⌘⇧F 打开语义搜索框（和普通 ⌘F 关键字搜索并存）
+- 结果带相关度 0–1 + 前后文片段高亮
+
+#### C4. Auto-tag / Auto-link
+
+**触发**：笔记保存后 debounce 5s，后台异步跑
+
+**做法**
+
+- 用 C3 的 embedding 取 top-20 候选相关笔记
+- LLM 从 20 里挑 3 条最相关
+- LLM 生成 1–5 个 tag
+- 结果写回：
+  - Tag → note 的 YAML front-matter
+  - 相关笔记 → 笔记末尾的 `## Related` 小节（可整体关闭）
+
+#### C5. Notebook Q&A（RAG）
+
+- 前端：扩展 per-note chat 的 context toggle —— `Doc` / `Folder` / **`Notebook`**（新增）
+- 后端：
+  - 用户问题 → embedding
+  - 从 vector db 取 top-k chunks（k=8）
+  - 塞进 system prompt：`"Based on the following excerpts from the user's notes, answer [excerpts with source paths]"`
+  - 输出要求 LLM 引用源笔记，格式 `> From journal/2026-04-12.md:`
+
+---
+
+### 7.5 Track D — 同步
+
+#### D1. iCloud sync（主要解决两件事）
+
+现在用户把 Notes root 指向 `~/Library/Mobile Documents/com~apple~CloudDocs/` 就能同步正文了。这个 Track 要补的是：
+
+- **一键迁移 wizard**：现有 Notes root → 复制到 iCloud 子文件夹 → 切换 security-scoped bookmark
+- **元数据同步**：SwiftData 层的 tags / favorites / chat 历史（这些不在 `.md` 里），走 CloudKit
+
+**优先级低**因为：a) 正文同步用户已有土办法；b) SwiftData 的 CloudKit sync 在 iOS 17 / macOS 14 上还偶尔出问题。
+
+---
+
+### 7.6 Track E — UX 持续优化
+
+参见 `UX_AUDIT.md`。按那份文档里的 P1/P2/P3 列表每个 release 消化 2–4 条，优先修用户反馈最多的。
+
+新的 UX 问题发现后，直接加到 `UX_AUDIT.md` 相应 severity 下，**不用**在这里复述。
+
+---
+
+### 7.7 发布节奏（滚动规划）
+
+| 版本 | 目标范围 | 预计时间线 |
+|---|---|---|
+| **v0.2** | A1（图片编辑）+ A2（音频编辑）+ B1（Preset）+ B2（Claude 原生）+ E 挑 3 条 P1 | ~1 个月 |
+| **v0.3** | A3（录屏）+ B3（OpenAI 原生）+ B4（成本可视）+ C1（长上下文总结）+ C2（迭代改写） | ~2 个月 |
+| **v0.4** | C3 + C4 + C5（RAG 全家桶） | ~3 个月 |
+| **v0.5+** | D + 更多由社区反馈驱动 | 持续 |
+
+> 时间是估算，不是承诺。实际节奏由用户反馈和遇到的技术风险调整。
+
+---
+
+## 8. 本文档的维护约定
+
+- **§1–§6** — 项目起源档案（2026-04-21 整合方案），不动
+- **§7 起** — living roadmap：
+  1. 每次 feature 落地，把对应条目从计划里移到 `CHANGELOG.md` 的 Released 区块，并在这里打 ✅
+  2. 新想法按 Track 追加到对应 §7.x 子节
+  3. 优先级变化直接改 §7.1 表格里的 "优先级" 列
+  4. 重大技术决定（例如"要不要加新的第三方依赖"）写成新表格，追加到 §5"锁定的决定"后面（不要改 §5 本身的表）
+- **语言**：中文为主（和 §1–§6 一致），引用代码 / 类名 / API 保留英文原文
+
