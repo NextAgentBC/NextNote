@@ -19,6 +19,11 @@ struct LibrarySidebar: View {
     @State private var mediaExpanded = true
     @State private var assetsExpanded = true
     @State private var expandedFolders: Set<String> = []
+    @State private var collapsedAssetFolders: Set<String> = []
+    @State private var showNewAssetFolderAlert = false
+    @State private var newAssetFolderName = ""
+    @State private var assetDeleteTarget: AssetCatalog.Asset?
+    @State private var assetError: String?
     /// Key of the folder-group row currently being hovered by a drag — used
     /// to tint the header so the user sees the drop target.
     @State private var hoveredDropTarget: String? = nil
@@ -49,6 +54,33 @@ struct LibrarySidebar: View {
                 appState.triggerRescanLibrary = false
             }
         }
+        .alert("New Asset Folder", isPresented: $showNewAssetFolderAlert) {
+            TextField("Name", text: $newAssetFolderName)
+            Button("Cancel", role: .cancel) { newAssetFolderName = "" }
+            Button("Create") { createAssetFolder() }
+        }
+        .alert("Move Asset to Trash?", isPresented: .init(
+            get: { assetDeleteTarget != nil },
+            set: { if !$0 { assetDeleteTarget = nil } }
+        )) {
+            Button("Cancel", role: .cancel) {}
+            Button("Move to Trash", role: .destructive) {
+                if let asset = assetDeleteTarget {
+                    trashAsset(asset)
+                }
+                assetDeleteTarget = nil
+            }
+        } message: {
+            Text(assetDeleteTarget?.title ?? "")
+        }
+        .alert("Asset Error", isPresented: .init(
+            get: { assetError != nil },
+            set: { if !$0 { assetError = nil } }
+        )) {
+            Button("OK") { assetError = nil }
+        } message: {
+            Text(assetError ?? "")
+        }
     }
 
     // MARK: - Ebooks
@@ -74,10 +106,9 @@ struct LibrarySidebar: View {
 
     @State private var assetsDropTargeted: Bool = false
 
-    /// Collapsible tray for the 素材库 / Asset Library. Header opens the
-    /// full grid view (⌘⇧A). Expanded body lists recent files inline so
-    /// the user can drag items directly into a note without opening the
-    /// sheet every time.
+    /// Collapsible tray for the 素材库 / Asset Library. The sidebar is the
+    /// primary workflow: folders, row actions, drag into notes, and main-area
+    /// preview all happen here without sending the user to a separate sheet.
     ///
     /// The whole tray is a drop destination — users can drag files from
     /// Finder or from the Media tray (sidebar rows are `.draggable(URL)`)
@@ -114,47 +145,43 @@ struct LibrarySidebar: View {
                 }
                 .buttonStyle(.plain)
 
-                // "Open library" shortcut on the header — power users don't
-                // have to dig through the Media menu to get to the grid.
                 Button {
-                    appState.showAssetLibrary = true
+                    newAssetFolderName = ""
+                    showNewAssetFolderAlert = true
                 } label: {
-                    Image(systemName: "rectangle.grid.2x2")
+                    Image(systemName: "folder.badge.plus")
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
-                .help("Open Asset Library (⌘⇧A)")
+                .help("New Asset Folder")
                 .padding(.trailing, 10)
             }
             .background(Color.secondary.opacity(0.05))
+            .contextMenu {
+                Button("New Folder") {
+                    newAssetFolderName = ""
+                    showNewAssetFolderAlert = true
+                }
+                Button("Reveal Assets Folder") {
+                    revealAssetFolder(nil)
+                }
+            }
 
             if assetsExpanded {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
-                        let recent = Array(assetCatalog.assets.prefix(12))
-                        if recent.isEmpty {
-                            emptyHint("Open the Asset Library (⌘⇧A) and drop images, videos, or audio.")
+                        let groups = assetFolderGroups
+                        if groups.isEmpty {
+                            emptyHint("Drop images, videos, or audio here.")
                         } else {
-                            ForEach(recent) { asset in
-                                assetRow(asset)
-                            }
-                            if assetCatalog.assets.count > recent.count {
-                                Button {
-                                    appState.showAssetLibrary = true
-                                } label: {
-                                    Text("View all \(assetCatalog.assets.count) →")
-                                        .font(.caption)
-                                        .foregroundStyle(.blue)
-                                        .padding(.vertical, 4)
-                                        .padding(.leading, 14)
-                                }
-                                .buttonStyle(.plain)
+                            ForEach(groups) { group in
+                                assetFolderRow(group)
                             }
                         }
                     }
                 }
-                .frame(maxHeight: 220)
+                .frame(maxHeight: 260)
             }
         }
         .task {
@@ -217,6 +244,93 @@ struct LibrarySidebar: View {
         return url
     }
 
+    private struct AssetFolderGroup: Identifiable {
+        let id: String
+        let folder: String
+        let title: String
+        let assets: [AssetCatalog.Asset]
+    }
+
+    private var assetFolderGroups: [AssetFolderGroup] {
+        let grouped = Dictionary(grouping: assetCatalog.assets, by: { $0.folder })
+        let defaultFolders = Set(LibraryRoots.defaultAssetSubfolders)
+        var folders = Set(assetCatalog.folders)
+        folders.formUnion(grouped.keys.filter { !$0.isEmpty })
+
+        var out: [AssetFolderGroup] = []
+        if let loose = grouped[""], !loose.isEmpty {
+            out.append(.init(id: "asset/loose", folder: "", title: "Loose", assets: loose))
+        }
+        for name in folders.sorted(by: { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }) {
+            guard !name.isEmpty else { continue }
+            let items = grouped[name] ?? []
+            if items.isEmpty && defaultFolders.contains(name) { continue }
+            out.append(.init(id: "asset/\(name)", folder: name, title: name, assets: items))
+        }
+        return out
+    }
+
+    @ViewBuilder
+    private func assetFolderRow(_ group: AssetFolderGroup) -> some View {
+        let collapsed = collapsedAssetFolders.contains(group.id)
+        let folderURL = assetFolderURL(group.folder)
+        let isDropTarget = hoveredDropTarget == group.id
+
+        Button {
+            withAnimation(.easeInOut(duration: 0.12)) {
+                if collapsed { collapsedAssetFolders.remove(group.id) }
+                else { collapsedAssetFolders.insert(group.id) }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: collapsed ? "chevron.right" : "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 12)
+                Image(systemName: group.folder.isEmpty ? "square.dashed" : "folder")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                Text(group.title)
+                    .font(.system(size: 13, weight: .medium))
+                    .lineLimit(1)
+                if !group.assets.isEmpty {
+                    Text("\(group.assets.count)")
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.tertiary)
+                }
+                Spacer()
+            }
+            .padding(.vertical, 3)
+            .padding(.leading, 12)
+            .padding(.trailing, 12)
+            .background(isDropTarget ? Color.accentColor.opacity(0.18) : Color.clear)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .dropDestination(for: URL.self) { urls, _ in
+            hoveredDropTarget = nil
+            return moveOrImportAssets(urls, to: group.folder)
+        } isTargeted: { active in
+            hoveredDropTarget = active ? group.id : (hoveredDropTarget == group.id ? nil : hoveredDropTarget)
+        }
+        .contextMenu {
+            Button("New Folder") {
+                newAssetFolderName = ""
+                showNewAssetFolderAlert = true
+            }
+            Button("Reveal in Finder") {
+                revealAssetFolder(group.folder)
+            }
+            .disabled(folderURL == nil)
+        }
+
+        if !collapsed {
+            ForEach(group.assets) { asset in
+                assetRow(asset)
+            }
+        }
+    }
+
     /// Single-line row inside the Assets tray. Draggable so the user can
     /// pull it into a markdown note without opening the full library.
     @ViewBuilder
@@ -236,17 +350,148 @@ struct LibrarySidebar: View {
         .padding(.leading, 26)
         .padding(.trailing, 12)
         .contentShape(Rectangle())
-        .onTapGesture(count: 2) {
-            appState.showAssetLibrary = true
+        .onTapGesture {
+            openAssetInMain(asset)
         }
         .draggable(asset.url)
         .contextMenu {
-            Button("Open in Library") { appState.showAssetLibrary = true }
-            Button("Reveal in Finder") {
-                #if os(macOS)
-                NSWorkspace.shared.activateFileViewerSelecting([asset.url])
-                #endif
+            Button(asset.kind == .video ? "Open / Trim" : "Open") {
+                openAssetInMain(asset)
             }
+            Divider()
+            Button("Copy Markdown Embed") { copyAssetMarkdown(asset) }
+            Button("Copy File URL") { copyAssetFileURL(asset) }
+            Menu("Move to") {
+                ForEach(assetMoveFolders, id: \.self) { folder in
+                    Button(folder.isEmpty ? "Loose" : folder) {
+                        _ = moveOrImportAssets([asset.url], to: folder)
+                    }
+                    .disabled(asset.folder == folder)
+                }
+            }
+            Divider()
+            Button("Reveal in Finder") {
+                revealAsset(asset)
+            }
+            Button("Move to Trash", role: .destructive) {
+                assetDeleteTarget = asset
+            }
+        }
+    }
+
+    private var assetMoveFolders: [String] {
+        var folders = Set(assetCatalog.folders)
+        folders.formUnion(assetCatalog.assets.map(\.folder).filter { !$0.isEmpty })
+        return [""] + folders.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    private func openAssetInMain(_ asset: AssetCatalog.Asset) {
+        appState.openExternalMedia(url: asset.url, title: asset.title)
+    }
+
+    private func copyAssetMarkdown(_ asset: AssetCatalog.Asset) {
+        let markdown = "![\(asset.title)](\(asset.url.absoluteString))"
+        copyToPasteboard(markdown)
+    }
+
+    private func copyAssetFileURL(_ asset: AssetCatalog.Asset) {
+        copyToPasteboard(asset.url.absoluteString)
+    }
+
+    private func copyToPasteboard(_ text: String) {
+        #if os(macOS)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        #endif
+    }
+
+    private func createAssetFolder() {
+        let raw = newAssetFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
+        newAssetFolderName = ""
+        guard !raw.isEmpty else { return }
+        let name = raw
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+        guard let root = libraryRoots.ensureAssetsRoot() else { return }
+        do {
+            let dir = root.appendingPathComponent(name, isDirectory: true)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            collapsedAssetFolders.remove("asset/\(name)")
+            Task { await assetCatalog.scan(root: libraryRoots.assetsRoot) }
+        } catch {
+            assetError = "Create folder failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func moveOrImportAssets(_ urls: [URL], to folder: String) -> Bool {
+        guard let root = libraryRoots.ensureAssetsRoot() else { return false }
+        let destination = assetFolderURL(folder) ?? root
+        do {
+            try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+        } catch {
+            assetError = "Move failed: \(error.localizedDescription)"
+            return false
+        }
+
+        var changed = 0
+        for src in urls {
+            guard MediaKind.from(url: src) != nil else { continue }
+            let dest = uniqueAssetsDestination(for: src.lastPathComponent, in: destination)
+            do {
+                if isAssetURL(src, under: root) {
+                    let srcDir = src.deletingLastPathComponent().standardizedFileURL.path
+                    guard srcDir != destination.standardizedFileURL.path else { continue }
+                    try FileManager.default.moveItem(at: src, to: dest)
+                } else {
+                    try FileManager.default.copyItem(at: src, to: dest)
+                }
+                changed += 1
+            } catch {
+                assetError = "Move failed: \(error.localizedDescription)"
+                return false
+            }
+        }
+        guard changed > 0 else { return false }
+        Task { await assetCatalog.scan(root: libraryRoots.assetsRoot) }
+        return true
+    }
+
+    private func assetFolderURL(_ folder: String) -> URL? {
+        guard let root = libraryRoots.assetsRoot else { return nil }
+        return folder.isEmpty ? root : root.appendingPathComponent(folder, isDirectory: true)
+    }
+
+    private func isAssetURL(_ url: URL, under root: URL) -> Bool {
+        let rootPath = root.standardizedFileURL.path
+        return url.standardizedFileURL.path.hasPrefix(rootPath + "/")
+    }
+
+    private func revealAssetFolder(_ folder: String?) {
+        #if os(macOS)
+        let url: URL?
+        if let folder {
+            url = assetFolderURL(folder)
+        } else {
+            url = libraryRoots.assetsRoot
+        }
+        if let url {
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        }
+        #endif
+    }
+
+    private func revealAsset(_ asset: AssetCatalog.Asset) {
+        #if os(macOS)
+        NSWorkspace.shared.activateFileViewerSelecting([asset.url])
+        #endif
+    }
+
+    private func trashAsset(_ asset: AssetCatalog.Asset) {
+        do {
+            try FileManager.default.trashItem(at: asset.url, resultingItemURL: nil)
+            Task { await assetCatalog.scan(root: libraryRoots.assetsRoot) }
+        } catch {
+            assetError = "Move to Trash failed: \(error.localizedDescription)"
         }
     }
 

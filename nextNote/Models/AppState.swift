@@ -115,6 +115,21 @@ final class AppState: ObservableObject {
         activeTabId = tab.id
     }
 
+    /// Open an asset or media file that lives outside the Notes vault in the
+    /// main content area. Used by the sidebar Assets tray so preview/trim
+    /// stays in-window instead of bouncing through a separate library sheet.
+    func openExternalMedia(url: URL, title: String) {
+        if let existing = openTabs.first(where: { $0.externalMediaURL == url }) {
+            activeTabId = existing.id
+            return
+        }
+        let doc = TextDocument(title: title, content: "", fileType: .md)
+        var tab = TabItem(document: doc)
+        tab.externalMediaURL = url
+        openTabs.append(tab)
+        activeTabId = tab.id
+    }
+
     /// Open a vault-backed file as a tab. Dedupes by relative path so repeated
     /// sidebar clicks activate the existing tab. `makeDocument` is only called
     /// when no tab is open for that path yet.
@@ -236,6 +251,10 @@ struct TabItem: Identifiable {
     /// placeholder only. Views switch on this to pick EPUBReaderHost.
     var bookID: UUID?
     var bookTitle: String?
+    /// File URL for media opened from outside the Notes vault, e.g. the
+    /// Assets sidebar. The editor body routes this to MediaPlayerView or an
+    /// image preview, and save hooks ignore it.
+    var externalMediaURL: URL?
 
     init(document: TextDocument) {
         self.id = UUID()
@@ -245,6 +264,7 @@ struct TabItem: Identifiable {
         self.scrollOffset = 0
         self.bookID = nil
         self.bookTitle = nil
+        self.externalMediaURL = nil
     }
 
     init(bookID: UUID, title: String) {
@@ -257,6 +277,7 @@ struct TabItem: Identifiable {
         self.scrollOffset = 0
         self.bookID = bookID
         self.bookTitle = title
+        self.externalMediaURL = nil
     }
 }
 

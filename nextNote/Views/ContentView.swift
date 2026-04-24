@@ -391,7 +391,11 @@ struct ContentView: View {
         // Media tabs (.mp4/.mov/.mp3/...) bypass the editor entirely.
         if let mediaURL = mediaURL(for: tab),
            let kind = MediaKind.from(url: mediaURL) {
-            MediaPlayerView(url: mediaURL, kind: kind)
+            if kind == .image {
+                ImagePreviewView(url: mediaURL)
+            } else {
+                MediaPlayerView(url: mediaURL, kind: kind)
+            }
         }
         // _dashboard.md is just a markdown file — open it in the regular
         // editor. The separate split / regenerate chrome is gone per user
@@ -416,6 +420,9 @@ struct ContentView: View {
     /// Return the on-disk URL for a vault-backed tab if (and only if) it
     /// points to a playable media file. Returns nil for regular notes.
     private func mediaURL(for tab: TabItem) -> URL? {
+        if let external = tab.externalMediaURL {
+            return external
+        }
         guard preferences.vaultMode,
               let relPath = appState.vaultPath(forTabId: tab.id),
               let url = vault.url(for: relPath),
@@ -953,6 +960,38 @@ struct AIActionPanelSheetView: View {
     }
 }
 #endif
+
+private struct ImagePreviewView: View {
+    let url: URL
+
+    var body: some View {
+        ZStack {
+            #if os(macOS)
+            Color(NSColor.textBackgroundColor)
+            if let image = NSImage(contentsOf: url) {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .padding(24)
+            } else {
+                Text("Could not load image.")
+                    .foregroundStyle(.secondary)
+            }
+            #else
+            Color(uiColor: .systemBackground)
+            if let image = UIImage(contentsOfFile: url.path) {
+                Image(uiImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .padding(24)
+            } else {
+                Text("Could not load image.")
+                    .foregroundStyle(.secondary)
+            }
+            #endif
+        }
+    }
+}
 
 // MARK: - Adaptive Split View
 
