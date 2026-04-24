@@ -8,7 +8,7 @@ A local-first Mac app for your notes, books, and media. Everything stays on your
 
 ### Easy way — download the release
 
-1. Go to the **[Releases page](https://github.com/<you>/nextNote/releases)**.
+1. Go to the **[Releases page](https://github.com/NextAgentBC/NextNote/releases)**.
 2. Grab the latest `nextNote-<version>.dmg`.
 3. Open the DMG, drag **nextNote** into **Applications**, eject.
 4. First launch: right-click the app → **Open** (one time only). macOS asks *"Are you sure you want to open it?"* — click **Open**.
@@ -325,8 +325,8 @@ Nothing leaves your Mac unless you choose a remote AI provider — and even then
 
 ## Asking for help
 
-- **Bugs / feature requests** → [Issues](https://github.com/<you>/nextNote/issues)
-- **Questions** → [Discussions](https://github.com/<you>/nextNote/discussions)
+- **Bugs / feature requests** → [Issues](https://github.com/NextAgentBC/NextNote/issues)
+- **Questions** → [Discussions](https://github.com/NextAgentBC/NextNote/discussions)
 - **Contributing** → see [TUTORIAL.md](TUTORIAL.md)
 
 ---

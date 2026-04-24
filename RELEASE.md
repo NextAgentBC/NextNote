@@ -218,12 +218,12 @@ Example `Casks/nextnote.rb` for a tap:
 cask "nextnote" do
   version "0.2.0"
   sha256 "<sha256 of the dmg>"
-  url "https://github.com/<you>/nextNote/releases/download/v#{version}/nextNote-#{version}.dmg"
+  url "https://github.com/NextAgentBC/NextNote/releases/download/v#{version}/nextNote-#{version}.dmg"
   name "nextNote"
   desc "Local-first Mac app for Markdown notes, EPUB reading, and media"
-  homepage "https://github.com/<you>/nextNote"
+  homepage "https://github.com/NextAgentBC/NextNote"
   app "nextNote.app"
 end
 ```
 
-This goes in your own tap repo (`github.com/<you>/homebrew-<you>`), not the core Homebrew cask repo — core requires notarization + a stable reputation.
+This goes in your own tap repo (e.g. `github.com/NextAgentBC/homebrew-nextnote`), not the core Homebrew cask repo — core requires notarization + a stable reputation.
