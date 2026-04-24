@@ -27,6 +27,16 @@ struct YouTubeDownloadView: View {
     @State private var lastOutputURL: URL?
     @State private var currentHandle: YTDLPHandle?
     @AppStorage("ytdlp.autoClassify") private var autoClassify: Bool = true
+    @AppStorage("ytdlp.saveTo") private var saveToRaw: String = SaveDestination.media.rawValue
+
+    enum SaveDestination: String, CaseIterable, Identifiable {
+        case media   = "Media"
+        case assets  = "Assets"
+        var id: String { rawValue }
+    }
+    private var saveTo: SaveDestination {
+        get { SaveDestination(rawValue: saveToRaw) ?? .media }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -39,27 +49,19 @@ struct YouTubeDownloadView: View {
 
             disclaimerBox
 
-            setupRow(
-                label: "yt-dlp binary",
-                pathText: locator.binaryURL?.path ?? "— not set —",
-                action: "Choose…"
-            ) {
-                Task { await locator.pickBinary() }
-            }
-
-            if locator.binaryURL == nil, let detected = YTDLPLocator.detectedBinaryPath {
-                HStack(spacing: 6) {
-                    Image(systemName: "sparkles").foregroundStyle(.blue)
-                    Text("Detected yt-dlp at \(detected). Click \"Choose…\" — the file picker will land on it; just press Open.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+            // yt-dlp row — auto-adopted when present at a Homebrew path;
+            // shows an install hint otherwise. Manual override via Change…
+            if let bin = locator.binaryURL {
+                toolStatusRow(label: "yt-dlp", path: bin.path, installed: true) {
+                    Task { await locator.pickBinary() }
                 }
-            } else if locator.binaryURL == nil {
-                HStack(spacing: 6) {
-                    Image(systemName: "terminal").foregroundStyle(.secondary)
-                    Text("Install first: `brew install yt-dlp`, then click Choose…")
-                        .font(.caption.monospaced())
-                        .foregroundStyle(.secondary)
+            } else {
+                installHintRow(
+                    label: "yt-dlp",
+                    command: "brew install yt-dlp",
+                    why: "required — downloads audio/video from YouTube"
+                ) {
+                    Task { await locator.pickBinary() }
                 }
             }
 
@@ -69,12 +71,19 @@ struct YouTubeDownloadView: View {
                     .foregroundStyle(.red)
             }
 
-            setupRow(
-                label: "ffmpeg (optional)",
-                pathText: locator.ffmpegURL?.path ?? (YTDLPLocator.detectedFFmpegPath.map { "— detected at \($0), click Choose" } ?? "— not set, max 720p without it"),
-                action: "Choose…"
-            ) {
-                Task { await locator.pickFFmpeg() }
+            // ffmpeg row — optional but unlocks 1080p+ merged downloads.
+            if let ff = locator.ffmpegURL {
+                toolStatusRow(label: "ffmpeg", path: ff.path, installed: true) {
+                    Task { await locator.pickFFmpeg() }
+                }
+            } else {
+                installHintRow(
+                    label: "ffmpeg",
+                    command: "brew install ffmpeg",
+                    why: "optional — required for resolutions above 720p and post-download HEVC transcoding"
+                ) {
+                    Task { await locator.pickFFmpeg() }
+                }
             }
 
             setupRow(
@@ -166,8 +175,28 @@ struct YouTubeDownloadView: View {
                 }
             }
 
-            Toggle("Auto-classify into Category/Subcategory folder (uses AI)", isOn: $autoClassify)
+            HStack(spacing: 8) {
+                Text("Save to")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 110, alignment: .leading)
+                Picker("", selection: Binding(
+                    get: { saveTo },
+                    set: { saveToRaw = $0.rawValue }
+                )) {
+                    ForEach(SaveDestination.allCases) { d in
+                        Text(d.rawValue).tag(d)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
                 .disabled(isRunning)
+            }
+
+            // AI classify only makes sense in the Media root (artist folders).
+            // Assets is a flat scratch pool — skip the artist subfolder step.
+            Toggle("Auto-classify into Category/Subcategory folder (uses AI)", isOn: $autoClassify)
+                .disabled(isRunning || saveTo == .assets)
                 .font(.caption)
 
             if isRunning {
@@ -251,6 +280,78 @@ struct YouTubeDownloadView: View {
         }
     }
 
+    /// "Installed and ready" row — green check + path + discreet Change…
+    /// button. Used when the binary was auto-detected and adopted.
+    private func toolStatusRow(
+        label: String,
+        path: String,
+        installed: Bool,
+        onChange: @escaping () -> Void
+    ) -> some View {
+        HStack(spacing: 8) {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(width: 110, alignment: .leading)
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+                .font(.caption)
+            Text(path)
+                .font(.caption.monospaced())
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Button("Change…", action: onChange)
+                .controlSize(.small)
+                .disabled(isRunning)
+        }
+    }
+
+    /// Installation hint — red/amber icon + exact brew command to paste
+    /// into Terminal. Keeps the Choose… escape hatch for users on a
+    /// non-standard install path.
+    private func installHintRow(
+        label: String,
+        command: String,
+        why: String,
+        onChoose: @escaping () -> Void
+    ) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(width: 110, alignment: .leading)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Image(systemName: "terminal")
+                        .foregroundStyle(.orange)
+                    Text(command)
+                        .font(.caption.monospaced())
+                        .textSelection(.enabled)
+                    Button {
+                        #if os(macOS)
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(command, forType: .string)
+                        #endif
+                    } label: {
+                        Image(systemName: "doc.on.doc")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Copy to clipboard")
+                }
+                Text(why)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+            Spacer()
+            Button("Choose…", action: onChoose)
+                .controlSize(.small)
+                .disabled(isRunning)
+        }
+    }
+
     // MARK: - Actions
 
     private var canDownload: Bool {
@@ -302,7 +403,29 @@ struct YouTubeDownloadView: View {
                 // and never appear in the left sidebar, which only scans
                 // under mediaRoot.
                 var finalURL = result.outputURL
-                if autoClassify {
+                let destination: SaveDestination = await MainActor.run { saveTo }
+                if destination == .assets {
+                    // Assets: flat scratch pool. Skip AI classify; just move
+                    // the file straight into the Assets root (no artist
+                    // subfolder) so it shows up in the Asset Library grid.
+                    let assetsRoot: URL? = await MainActor.run {
+                        libraryRoots.ensureAssetsRoot()
+                    }
+                    if let assetsRoot {
+                        let src = result.outputURL
+                        let dest: URL = await MainActor.run {
+                            uniqueDestination(for: src.lastPathComponent, in: assetsRoot)
+                        }
+                        do {
+                            try FileManager.default.moveItem(at: src, to: dest)
+                            finalURL = dest
+                        } catch {
+                            await MainActor.run {
+                                statusLine = "Move to Assets failed: \(error.localizedDescription) — kept in download folder."
+                            }
+                        }
+                    }
+                } else if autoClassify {
                     await MainActor.run { statusLine = "Classifying with AI…" }
                     let m = result.metadata
                     let ctx = MediaCategorizer.Context(
@@ -365,6 +488,21 @@ struct YouTubeDownloadView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Helpers
+
+    private func uniqueDestination(for filename: String, in dir: URL) -> URL {
+        let fm = FileManager.default
+        let url = dir.appendingPathComponent(filename)
+        if !fm.fileExists(atPath: url.path) { return url }
+        let ext = url.pathExtension
+        let stem = url.deletingPathExtension().lastPathComponent
+        for n in 2... {
+            let candidate = dir.appendingPathComponent("\(stem)-\(n).\(ext)")
+            if !fm.fileExists(atPath: candidate.path) { return candidate }
+        }
+        return url
     }
 
     // MARK: - Search

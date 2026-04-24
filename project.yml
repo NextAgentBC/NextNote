@@ -75,8 +75,9 @@ targets:
     entitlements:
       path: nextNote/nextNote.entitlements
       properties:
-        com.apple.security.app-sandbox: true
-        com.apple.security.files.user-selected.read-write: true
-        com.apple.security.files.downloads.read-write: true
-        com.apple.security.assets.pictures.read-only: true
+        # Sandbox OFF: nextNote spawns user-installed CLI tools (yt-dlp,
+        # ffmpeg, ollama) from Homebrew paths. Requiring a NSOpenPanel
+        # grant per binary on every fresh install was worse UX than the
+        # containment was worth for a local notes app.
+        com.apple.security.app-sandbox: false
         com.apple.security.network.client: true

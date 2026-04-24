@@ -26,6 +26,26 @@ final class YTDLPLocator: ObservableObject {
         restoreBinary()
         restoreFFmpeg()
         restoreFolder()
+
+        // Sandbox is off (see nextNote.entitlements) — we can spawn any
+        // binary on disk without a security-scoped bookmark. Auto-adopt
+        // detected Homebrew paths so the user doesn't have to click
+        // Choose… every fresh install. Manual override still works.
+        autoAdoptDetectedBinariesIfNeeded()
+    }
+
+    private func autoAdoptDetectedBinariesIfNeeded() {
+        let fm = FileManager.default
+        if binaryURL == nil,
+           let detected = Self.detectedBinaryPath,
+           fm.isExecutableFile(atPath: detected) {
+            adoptBinary(URL(fileURLWithPath: detected))
+        }
+        if ffmpegURL == nil,
+           let detected = Self.detectedFFmpegPath,
+           fm.isExecutableFile(atPath: detected) {
+            adoptFFmpeg(URL(fileURLWithPath: detected))
+        }
     }
 
     deinit {

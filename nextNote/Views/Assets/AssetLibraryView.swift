@@ -118,6 +118,14 @@ struct AssetLibraryView: View {
             }
 
             Button {
+                pasteFromClipboard()
+            } label: {
+                Label("Paste", systemImage: "doc.on.clipboard")
+            }
+            .keyboardShortcut("v", modifiers: [.command])
+            .help("Paste image from clipboard (⌘V)")
+
+            Button {
                 revealRootInFinder()
             } label: {
                 Image(systemName: "folder")
@@ -290,6 +298,61 @@ struct AssetLibraryView: View {
         }
         return out
     }()
+
+    /// Paste image data (or file URLs) from the system clipboard into the
+    /// Assets root. Handles three cases:
+    ///   - File URLs (e.g. Finder copy of a file) → treated like a drop.
+    ///   - Raw TIFF/PNG image data (e.g. screenshot `⌃⇧⌘4`, Preview copy,
+    ///     browser "Copy Image") → saved as `pasted-<timestamp>.png`.
+    ///   - Anything else → no-op with a toast.
+    private func pasteFromClipboard() {
+        #if os(macOS)
+        let pb = NSPasteboard.general
+
+        // File URLs first — same path as drop.
+        if let urls = pb.readObjects(
+            forClasses: [NSURL.self],
+            options: [.urlReadingFileURLsOnly: true]
+        ) as? [URL], !urls.isEmpty {
+            importURLs(urls)
+            return
+        }
+
+        // Raw image data.
+        guard let root = libraryRoots.ensureAssetsRoot() else {
+            importError = "Assets folder is not configured."
+            return
+        }
+        guard let image = NSImage(pasteboard: pb) else {
+            importError = "No image or file found on the clipboard."
+            return
+        }
+        guard let tiff = image.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff),
+              let png = rep.representation(using: .png, properties: [:]) else {
+            importError = "Could not convert the clipboard image to PNG."
+            return
+        }
+
+        let stamp = Self.pasteTimestamp()
+        let dest = uniqueDestination(for: "pasted-\(stamp).png", in: root)
+        do {
+            try png.write(to: dest, options: .atomic)
+            Task {
+                await assetCatalog.scan(root: libraryRoots.assetsRoot)
+                await MainActor.run { appState.triggerRescanLibrary = true }
+            }
+        } catch {
+            importError = "Save failed: \(error.localizedDescription)"
+        }
+        #endif
+    }
+
+    private static func pasteTimestamp() -> String {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd-HHmmss"
+        return fmt.string(from: Date())
+    }
 
     private func revealInFinder(_ asset: AssetCatalog.Asset) {
         #if os(macOS)

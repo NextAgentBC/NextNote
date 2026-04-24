@@ -72,10 +72,16 @@ struct LibrarySidebar: View {
 
     // MARK: - Assets
 
+    @State private var assetsDropTargeted: Bool = false
+
     /// Collapsible tray for the 素材库 / Asset Library. Header opens the
     /// full grid view (⌘⇧A). Expanded body lists recent files inline so
     /// the user can drag items directly into a note without opening the
     /// sheet every time.
+    ///
+    /// The whole tray is a drop destination — users can drag files from
+    /// Finder or from the Media tray (sidebar rows are `.draggable(URL)`)
+    /// onto it to copy them into the Assets root.
     private var assetsTray: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 0) {
@@ -158,6 +164,44 @@ struct LibrarySidebar: View {
         .onReceive(libraryRoots.$assetsRoot) { url in
             Task { await assetCatalog.scan(root: url) }
         }
+        .background(assetsDropTargeted ? Color.accentColor.opacity(0.12) : .clear)
+        .dropDestination(for: URL.self) { urls, _ in
+            assetsDropTargeted = false
+            return importToAssets(urls)
+        } isTargeted: { active in
+            assetsDropTargeted = active
+        }
+    }
+
+    /// Copy dropped files into the Assets root. Accepts drops from both
+    /// Finder and the Media sidebar rows (which drag a file:// URL).
+    /// Unsupported kinds (non-image/video/audio) are ignored silently —
+    /// the drop still returns true so SwiftUI doesn't animate the badge
+    /// back to its origin.
+    private func importToAssets(_ urls: [URL]) -> Bool {
+        guard let root = libraryRoots.ensureAssetsRoot() else { return false }
+        let media = urls.filter { MediaKind.from(url: $0) != nil }
+        guard !media.isEmpty else { return false }
+        let fm = FileManager.default
+        for src in media {
+            let dest = uniqueAssetsDestination(for: src.lastPathComponent, in: root)
+            try? fm.copyItem(at: src, to: dest)
+        }
+        Task { await assetCatalog.scan(root: libraryRoots.assetsRoot) }
+        return true
+    }
+
+    private func uniqueAssetsDestination(for filename: String, in dir: URL) -> URL {
+        let fm = FileManager.default
+        let url = dir.appendingPathComponent(filename)
+        if !fm.fileExists(atPath: url.path) { return url }
+        let ext = url.pathExtension
+        let stem = url.deletingPathExtension().lastPathComponent
+        for n in 2... {
+            let candidate = dir.appendingPathComponent("\(stem)-\(n).\(ext)")
+            if !fm.fileExists(atPath: candidate.path) { return candidate }
+        }
+        return url
     }
 
     /// Single-line row inside the Assets tray. Draggable so the user can
@@ -447,10 +491,15 @@ struct LibrarySidebar: View {
         .padding(.trailing, 12)
         .contentShape(Rectangle())
         .onTapGesture(perform: action)
+        // Dragging a media row carries its file URL, so it can be dropped
+        // onto the Assets tray (to copy into the asset library) or into
+        // the markdown editor (to embed via `![](path)`).
+        .draggable(item.url)
         .contextMenu {
             Button("Play") { playFile(item) }
             Button("Enqueue") { enqueueFile(item) }
             Divider()
+            Button("Add to Assets") { _ = importToAssets([item.url]) }
             Button("Reveal in Finder") {
                 #if os(macOS)
                 NSWorkspace.shared.activateFileViewerSelecting([item.url])

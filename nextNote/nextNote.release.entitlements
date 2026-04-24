@@ -2,15 +2,15 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <!-- Sandbox + user-picked file access — same as Debug. -->
+    <!--
+      Non-sandboxed desktop app with hardened runtime. Sandbox is off so
+      nextNote can spawn Homebrew CLI tools (yt-dlp, ffmpeg, ollama)
+      from their fixed install paths without making the user re-grant
+      each binary via NSOpenPanel on every fresh install. Hardened
+      runtime + notarization still apply.
+    -->
     <key>com.apple.security.app-sandbox</key>
-    <true/>
-    <key>com.apple.security.files.user-selected.read-write</key>
-    <true/>
-    <key>com.apple.security.files.downloads.read-write</key>
-    <true/>
-    <key>com.apple.security.assets.pictures.read-only</key>
-    <true/>
+    <false/>
     <key>com.apple.security.network.client</key>
     <true/>
 
