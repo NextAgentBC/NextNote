@@ -221,6 +221,10 @@ release-signed: build
 		-srcfolder "$(DMG_STAGING)" \
 		-ov -format UDZO \
 		"dist/NextNote-$(VERSION).dmg" >/dev/null; \
+	echo "  → submit DMG to notary service (second pass)…"; \
+	xcrun notarytool submit "dist/NextNote-$(VERSION).dmg" \
+		--keychain-profile "$(NOTARY_PROFILE)" \
+		--wait || exit 1; \
 	echo "  → staple DMG"; \
 	xcrun stapler staple "dist/NextNote-$(VERSION).dmg" || exit 1; \
 	xcrun stapler validate "dist/NextNote-$(VERSION).dmg" || exit 1; \

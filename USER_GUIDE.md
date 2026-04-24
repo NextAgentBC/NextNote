@@ -13,27 +13,13 @@ A local-first Mac app for your notes, books, and media. Everything stays on your
 3. Open the DMG, drag **nextNote** into **Applications**, eject.
 4. First launch: right-click the app → **Open** (one time only). macOS asks *"Are you sure you want to open it?"* — click **Open**.
 
-**Gatekeeper will block the first launch** because NextNote is open-source and not signed with Apple's paid Developer Program. The app is safe — source code is on GitHub. Unblock it **once**, then you're done forever:
+The signed release (v0.1.0+) is **notarized by Apple** — double-click and run, no Gatekeeper warnings.
 
-**Easiest — one Terminal command**
-
-Open Terminal (Applications → Utilities → Terminal) and paste:
+If you build from source or grab an older ad-hoc signed build, macOS may refuse to open it. Unblock once:
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/NextNote.app
 ```
-
-Double-click the app. Done.
-
-**GUI alternative (no Terminal)**
-
-1. Double-click NextNote → see the "cannot be opened" dialog. Click Cancel / Done.
-2. Open **System Settings** → **Privacy & Security**.
-3. Scroll down — you'll see *"NextNote was blocked because it is not from an identified developer."* → click **Open Anyway**.
-4. Enter your Mac password.
-5. Double-click NextNote again → dialog appears one more time with an **Open** button → click it.
-
-Every later launch opens normally.
 
 ### From source
 
