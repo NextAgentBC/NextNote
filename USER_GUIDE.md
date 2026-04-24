@@ -184,20 +184,58 @@ Supported formats depend on what macOS can natively decode (AVFoundation). If a 
 
 ## 📥 YouTube download
 
-*Optional — requires `yt-dlp` installed via Homebrew.*
+*Optional feature — needs two tiny command-line tools (`yt-dlp` and `ffmpeg`), which we install through Homebrew. Never touched the Terminal before? No problem — the whole thing takes about 10 minutes and you only do it once.*
 
-Install yt-dlp (one time):
+### Step 0 — install Homebrew (skip if you already have it)
+
+Homebrew is the standard "app store" for command-line tools on macOS. Everything below uses it.
+
+1. Open **Terminal**: press **⌘Space** (Spotlight), type `Terminal`, hit **Return**. A black (or white) window with a blinking cursor appears — that's it.
+2. Copy the official installer command from [brew.sh](https://brew.sh) (same as the line below), paste it into Terminal, and press **Return**:
+
+   ```sh
+   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+   ```
+
+3. It'll ask for your **Mac login password**. Type it and press Return — you won't see the characters as you type, that's a security feature, not a bug. Installation then runs for 3–10 minutes depending on your network.
+4. When it finishes, Homebrew prints **"Next steps"** at the bottom with two lines starting with `echo …`. On an Apple Silicon Mac (M1/M2/M3/M4) they look like this:
+
+   ```sh
+   echo >> ~/.zprofile
+   echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile
+   eval "$(/opt/homebrew/bin/brew shellenv)"
+   ```
+
+   **Copy the exact block Homebrew printed for you** (not the example above — yours may differ) and paste it into Terminal, press Return. This is the step most beginners miss; it's what lets Terminal find `brew` next time.
+5. Verify: type `brew --version` and press Return. You should see something like `Homebrew 4.x.x`. If you get `command not found: brew`, close Terminal completely (⌘Q), reopen it, and try again.
+
+### Step 1 — install yt-dlp (and ffmpeg)
+
+Still in Terminal:
 
 ```sh
 brew install yt-dlp
-brew install ffmpeg     # optional but recommended (unlocks mp3 + 1080p+)
+brew install ffmpeg     # optional but strongly recommended — unlocks mp3 export + 1080p/4K video
 ```
 
-Then in nextNote:
+Each line takes 10–60 seconds. Verify:
+
+```sh
+yt-dlp --version        # prints a date-like version, e.g. 2025.09.26
+ffmpeg -version         # only if you installed it
+```
+
+If both print a version, you're done with Terminal — you can close it.
+
+### Step 2 — point nextNote at them
 
 1. **Media → Download from YouTube…** (or click the ↓ in the ambient bar).
-2. First time: click **Choose…** next to "yt-dlp binary" and pick `/opt/homebrew/bin/yt-dlp`. The file picker lands you there — just press **Open**.
-3. (Same for ffmpeg if you want it.)
+2. First time only: click **Choose…** next to "yt-dlp binary". The file picker opens in the right folder automatically — just press **Open**. If it doesn't, navigate to:
+   - `/opt/homebrew/bin/yt-dlp` on Apple Silicon Macs (M1/M2/M3/M4)
+   - `/usr/local/bin/yt-dlp` on older Intel Macs
+
+   (These folders are hidden by default. Press **⌘⇧G** in the file picker and paste the path.)
+3. (Same for ffmpeg, if you installed it.)
 4. Paste a YouTube URL.
 5. Choose **Audio** (mp3) or **Video** (mp4). Pick quality if you want.
 6. Click **Download**.
@@ -294,8 +332,11 @@ API keys are stored in the macOS Keychain, never in plaintext.
 **"Could not access …" on a folder.**
 The saved security-scoped bookmark went stale (you moved / renamed the folder). Library menu → **Change <Kind> Folder…** and re-pick.
 
+**Terminal says `command not found: brew` right after installing Homebrew.**
+You skipped the "Next steps" block Homebrew printed (the two `echo` lines). Scroll back up in Terminal, find it, copy and paste the whole block. Then close Terminal (⌘Q) and reopen it. See [Step 0 of the YouTube section](#step-0--install-homebrew-skip-if-you-already-have-it) for details.
+
 **YouTube download says yt-dlp not found.**
-`brew install yt-dlp`, then in the download sheet click **Choose…** and point to it — usually `/opt/homebrew/bin/yt-dlp`.
+Run `brew install yt-dlp` in Terminal. Then in nextNote's download sheet click **Choose…** and point to `/opt/homebrew/bin/yt-dlp` (Apple Silicon) or `/usr/local/bin/yt-dlp` (Intel). If the folder is hidden in the file picker, press **⌘⇧G** and paste the path.
 
 **EPUB won't open.**
 Not every EPUB is well-formed. Try opening it in another reader first. If it works there but not here, file a bug and attach the EPUB if you can.
