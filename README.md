@@ -1,6 +1,6 @@
 # NextNote
 
-[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![License: PolyForm NC 1.0](https://img.shields.io/badge/license-PolyForm_NC_1.0-blue.svg)](LICENSE)
 [![macOS 14+](https://img.shields.io/badge/macOS-14%2B-lightgrey.svg)](https://www.apple.com/macos/)
 [![Swift 6.0](https://img.shields.io/badge/swift-6.0-orange.svg)](https://swift.org)
 [![Release](https://img.shields.io/github/v/release/NextAgentBC/NextNote?include_prereleases)](https://github.com/NextAgentBC/NextNote/releases)
@@ -94,4 +94,6 @@ v0.1. Features listed above are working. Test target not added yet — high-valu
 
 ## License
 
-Apache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
+[PolyForm Noncommercial License 1.0.0](LICENSE) — source-available, free for personal / research / nonprofit / educational use. **Commercial use is not granted.** For a commercial license, contact NextAgentBC via GitHub. See also [NOTICE](NOTICE).
+
+Note: PolyForm Noncommercial is a *source-available* license, not an OSI-approved open-source license — the OSI definition prohibits field-of-use restrictions, and "noncommercial only" is one. The source is public, forkable, and modifiable for any noncommercial purpose.

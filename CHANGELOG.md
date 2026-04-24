@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.4 — 2026-04-24
+
+### License change
+
+- **Relicensed from Apache 2.0 → PolyForm Noncommercial 1.0.0.** NextNote is now source-available (not OSI "open source"): free for personal / research / nonprofit / educational use, commercial use requires a separate license from NextAgentBC. LICENSE, NOTICE, README, TUTORIAL, USER_GUIDE, RELEASE, Makefile, Info.plist, and project.yml copyright strings all updated.
+
+### Media — unified sidebar + popup
+
+- **One source of truth.** Sidebar Media tray and Media Library popup now read from the same persisted store (`MediaLibrary`). Renames, removes, and adds in the popup show up live in the sidebar (and vice versa); the stale dual-catalog design is gone.
+- **`MediaLibrary.scanRoot(_:)`** — ingests every audio/video file under the vault's Media root, prunes entries whose files vanished, dedupes by path.
+- **Track-level context menu in sidebar.** Right-click a media row → Play / Enqueue / Add to Assets / Reveal in Finder / Remove from Library / Move to Trash.
+- **AmbientBar cleanup.** Dropped the redundant "Media Library" button from the ambient player bar — the sidebar is now the canonical browsing UI. Popup is still reachable via ⌘⇧M for playlists, Auto-Clean, and Restore Titles admin.
+- Deleted `MediaCatalog.swift` (dead after consolidation).
+
 ## 0.1.3 — 2026-04-24
 
 ### Asset Library — folders, categories, UX pass

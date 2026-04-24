@@ -734,4 +734,4 @@ NextNote is actively developed. Planned for upcoming releases:
 
 ---
 
-*NextNote is open source under the Apache License 2.0. Enjoy.*
+*NextNote is source-available under the PolyForm Noncommercial License 1.0.0 — free for personal, research, and nonprofit use. Commercial use requires a separate license from NextAgentBC.*

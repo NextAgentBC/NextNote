@@ -252,14 +252,6 @@ struct AmbientBar: View {
             }
 
             Button {
-                appState.showMediaLibrary = true
-            } label: {
-                Image(systemName: "music.note.house")
-            }
-            .buttonStyle(.borderless)
-            .help("Media Library")
-
-            Button {
                 appState.showYouTubeDownload = true
             } label: {
                 Image(systemName: "arrow.down.circle")

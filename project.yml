@@ -60,9 +60,9 @@ targets:
         PRODUCT_NAME: NextNote
         INFOPLIST_KEY_CFBundleDisplayName: NextNote
         INFOPLIST_KEY_CFBundleName: NextNote
-        INFOPLIST_KEY_NSHumanReadableCopyright: "Copyright © 2026 NextAgentBC. Licensed under the Apache License 2.0."
-        MARKETING_VERSION: "0.1.3"
-        CURRENT_PROJECT_VERSION: "4"
+        INFOPLIST_KEY_NSHumanReadableCopyright: "Copyright © 2026 NextAgentBC. Licensed under the PolyForm Noncommercial License 1.0.0. Commercial use requires a separate license."
+        MARKETING_VERSION: "0.1.4"
+        CURRENT_PROJECT_VERSION: "5"
         SWIFT_EMIT_LOC_STRINGS: "YES"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SUPPORTS_MACCATALYST: false

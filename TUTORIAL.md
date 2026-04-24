@@ -451,7 +451,7 @@ There is no test target yet. Highest-value candidates when someone wants to add 
 
 ## 13. License
 
-Apache License 2.0 — see `LICENSE` and `NOTICE` at the repo root. Third-party dependencies (MLX, ZIPFoundation, SwiftSoup, tokenizers, HF API) are MIT-licensed and listed in `NOTICE`.
+[PolyForm Noncommercial License 1.0.0](LICENSE) — source-available, free for personal / research / nonprofit / educational use. Commercial use is **not** granted; contact NextAgentBC for a commercial license. See `LICENSE` and `NOTICE` at the repo root. Third-party dependencies (MLX, ZIPFoundation, SwiftSoup, tokenizers, HF API) remain under their MIT licenses and are listed in `NOTICE`.
 
 ---
 

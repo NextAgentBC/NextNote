@@ -5,7 +5,6 @@ struct ContentView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var vault: VaultStore
     @EnvironmentObject private var libraryRoots: LibraryRoots
-    @EnvironmentObject private var mediaCatalog: MediaCatalog
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
     @Query(sort: \TextDocument.modifiedAt, order: .reverse) private var documents: [TextDocument]
@@ -189,7 +188,7 @@ struct ContentView: View {
             ebooksRoot: libraryRoots.ebooksRoot,
             context: modelContext
         )
-        await mediaCatalog.scan(mediaRoot: libraryRoots.mediaRoot)
+        await MediaLibrary.shared.scanRoot(libraryRoots.mediaRoot)
     }
 
     private func importFiles(from urls: [URL]) {

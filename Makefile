@@ -170,7 +170,7 @@ release: build-release
 	  echo "════════════════════════════════════════════════════════════"; \
 	  echo ""; \
 	  echo "Docs:    https://github.com/NextAgentBC/NextNote"; \
-	  echo "License: Apache 2.0 (see LICENSE.txt + NOTICE.txt)"; \
+	  echo "License: PolyForm Noncommercial 1.0.0 — personal / research / nonprofit only. Commercial use not granted. (see LICENSE.txt + NOTICE.txt)"; \
 	} > "$(DMG_STAGING)/README.txt"; \
 	ln -s /Applications "$(DMG_STAGING)/Applications"; \
 	ditto --norsrc --noextattr --noacl -c -k --keepParent "$(DMG_STAGING)/NextNote.app" "dist/NextNote-$(VERSION).zip"; \
@@ -247,7 +247,7 @@ release-signed: build-release
 	  echo "  brew install ollama             # local LLM provider"; \
 	  echo ""; \
 	  echo "Docs:    https://github.com/NextAgentBC/NextNote"; \
-	  echo "License: Apache 2.0 (see LICENSE.txt + NOTICE.txt)"; \
+	  echo "License: PolyForm Noncommercial 1.0.0 — personal / research / nonprofit only. Commercial use not granted. (see LICENSE.txt + NOTICE.txt)"; \
 	} > "$(DMG_STAGING)/README.txt"; \
 	ln -s /Applications "$(DMG_STAGING)/Applications"; \
 	echo "  → zip for release"; \

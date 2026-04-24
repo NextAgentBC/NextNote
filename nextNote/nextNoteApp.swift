@@ -6,7 +6,6 @@ struct NextNoteApp: App {
     @StateObject private var appState = AppState()
     @StateObject private var vaultStore = VaultStore()
     @StateObject private var libraryRoots = LibraryRoots()
-    @StateObject private var mediaCatalog = MediaCatalog()
     @StateObject private var assetCatalog = AssetCatalog()
 
     var sharedModelContainer: ModelContainer = {
@@ -26,7 +25,6 @@ struct NextNoteApp: App {
                 .environmentObject(appState)
                 .environmentObject(vaultStore)
                 .environmentObject(libraryRoots)
-                .environmentObject(mediaCatalog)
                 .environmentObject(assetCatalog)
                 .frame(minWidth: 700, minHeight: 500)
         }
@@ -40,7 +38,6 @@ struct NextNoteApp: App {
                 .environmentObject(appState)
                 .environmentObject(vaultStore)
                 .environmentObject(libraryRoots)
-                .environmentObject(mediaCatalog)
                 .environmentObject(assetCatalog)
         }
         #else
@@ -49,7 +46,6 @@ struct NextNoteApp: App {
                 .environmentObject(appState)
                 .environmentObject(vaultStore)
                 .environmentObject(libraryRoots)
-                .environmentObject(mediaCatalog)
                 .environmentObject(assetCatalog)
         }
         .modelContainer(sharedModelContainer)

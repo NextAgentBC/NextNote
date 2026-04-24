@@ -9,8 +9,8 @@ struct LibrarySidebar: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var vault: VaultStore
     @EnvironmentObject private var libraryRoots: LibraryRoots
-    @EnvironmentObject private var mediaCatalog: MediaCatalog
     @EnvironmentObject private var assetCatalog: AssetCatalog
+    @StateObject private var mediaLibrary = MediaLibrary.shared
     @Environment(\.modelContext) private var modelContext
 
     @Query(sort: \Book.title) private var books: [Book]
@@ -498,7 +498,10 @@ struct LibrarySidebar: View {
     // MARK: - Media
 
     private var mediaTray: some View {
-        let totalMedia = mediaCatalog.music.count + mediaCatalog.videos.count
+        let musicGroups = mediaLibrary.groups(kind: .audio, under: libraryRoots.mediaRoot)
+        let videoGroups = mediaLibrary.groups(kind: .video, under: libraryRoots.mediaRoot)
+        let totalMedia = musicGroups.reduce(0) { $0 + $1.items.count }
+            + videoGroups.reduce(0) { $0 + $1.items.count }
         return VStack(alignment: .leading, spacing: 0) {
             trayHeader(
                 title: "Media",
@@ -509,22 +512,16 @@ struct LibrarySidebar: View {
             if mediaExpanded {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
-                        let musicGroups = mediaCatalog.musicGroups
-                        let videoGroups = mediaCatalog.videoGroups
                         if !musicGroups.isEmpty {
                             subHeader(title: "Music")
                             ForEach(musicGroups) { group in
-                                folderGroup(group, kindKey: "music") {
-                                    AmbientPlayer.shared.playURL($0.url, title: $0.title)
-                                }
+                                folderGroup(group) { playFile($0) }
                             }
                         }
                         if !videoGroups.isEmpty {
                             subHeader(title: "Videos")
                             ForEach(videoGroups) { group in
-                                folderGroup(group, kindKey: "video") {
-                                    AmbientPlayer.shared.playURL($0.url, title: $0.title)
-                                }
+                                folderGroup(group) { playFile($0) }
                             }
                         }
                         if totalMedia == 0 {
@@ -589,11 +586,10 @@ struct LibrarySidebar: View {
 
     @ViewBuilder
     private func folderGroup(
-        _ group: MediaCatalog.MediaGroup,
-        kindKey: String,
-        onTap: @escaping (MediaCatalog.MediaFile) -> Void
+        _ group: MediaLibrary.MediaGroup,
+        onTap: @escaping (Track) -> Void
     ) -> some View {
-        let key = "\(kindKey)/\(group.folder)"
+        let key = group.id
         let expanded = expandedFolders.contains(key)
         let title = group.folder.isEmpty ? "Loose files" : group.folder
         let folderURL = folderURL(for: group)
@@ -662,49 +658,42 @@ struct LibrarySidebar: View {
 
     // MARK: - Play helpers
 
-    private func tracks(from group: MediaCatalog.MediaGroup) -> [Track] {
-        group.items.map {
-            Track(id: UUID(), url: $0.url, title: $0.title, bookmark: nil)
-        }
-    }
-
     /// Queue every file under `group` and start playback. Pop the video
     /// window when any item is video so the user sees the picture.
-    private func playGroup(_ group: MediaCatalog.MediaGroup, shuffle: Bool) {
-        var list = tracks(from: group)
+    private func playGroup(_ group: MediaLibrary.MediaGroup, shuffle: Bool) {
+        var list = group.items
         guard !list.isEmpty else { return }
         if shuffle { list.shuffle() }
         AmbientPlayer.shared.setQueue(list)
-        if list.contains(where: { MediaKind.from(url: $0.url) == .video }) {
+        if group.kind == .video {
             VideoVibeWindowController.shared.show()
         }
     }
 
-    private func enqueueGroup(_ group: MediaCatalog.MediaGroup) {
-        let list = tracks(from: group)
+    private func enqueueGroup(_ group: MediaLibrary.MediaGroup) {
+        let list = group.items
         guard !list.isEmpty else { return }
         AmbientPlayer.shared.enqueue(list)
-        if list.contains(where: { MediaKind.from(url: $0.url) == .video }) {
+        if group.kind == .video {
             VideoVibeWindowController.shared.show()
         }
     }
 
-    private func playFile(_ item: MediaCatalog.MediaFile) {
-        AmbientPlayer.shared.playURL(item.url, title: item.title)
-        if MediaKind.from(url: item.url) == .video {
+    private func playFile(_ track: Track) {
+        AmbientPlayer.shared.setQueue([track])
+        if MediaKind.from(url: track.url) == .video {
             VideoVibeWindowController.shared.show()
         }
     }
 
-    private func enqueueFile(_ item: MediaCatalog.MediaFile) {
-        let t = Track(id: UUID(), url: item.url, title: item.title, bookmark: nil)
-        AmbientPlayer.shared.enqueue([t])
-        if MediaKind.from(url: item.url) == .video {
+    private func enqueueFile(_ track: Track) {
+        AmbientPlayer.shared.enqueue([track])
+        if MediaKind.from(url: track.url) == .video {
             VideoVibeWindowController.shared.show()
         }
     }
 
-    private func folderURL(for group: MediaCatalog.MediaGroup) -> URL? {
+    private func folderURL(for group: MediaLibrary.MediaGroup) -> URL? {
         guard let root = libraryRoots.mediaRoot, !group.folder.isEmpty else { return nil }
         return root.appendingPathComponent(group.folder, isDirectory: true)
     }
@@ -722,7 +711,7 @@ struct LibrarySidebar: View {
         else { return false }
         do {
             _ = try MediaFolderMerger.merge(source: source, into: target)
-            Task { await mediaCatalog.scan(mediaRoot: libraryRoots.mediaRoot) }
+            Task { await mediaLibrary.scanRoot(libraryRoots.mediaRoot) }
             return true
         } catch {
             return false
@@ -731,15 +720,16 @@ struct LibrarySidebar: View {
 
     @ViewBuilder
     private func mediaRow(
-        _ item: MediaCatalog.MediaFile,
+        _ track: Track,
         indent: CGFloat = 22,
         action: @escaping () -> Void
     ) -> some View {
+        let kind = MediaKind.from(url: track.url) ?? .audio
         HStack(spacing: 6) {
-            Image(systemName: item.kind.iconName)
+            Image(systemName: kind.iconName)
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
-            Text(item.title)
+            Text(track.title)
                 .font(.system(size: 13))
                 .lineLimit(1)
             Spacer()
@@ -752,16 +742,23 @@ struct LibrarySidebar: View {
         // Dragging a media row carries its file URL, so it can be dropped
         // onto the Assets tray (to copy into the asset library) or into
         // the markdown editor (to embed via `![](path)`).
-        .draggable(item.url)
+        .draggable(track.url)
         .contextMenu {
-            Button("Play") { playFile(item) }
-            Button("Enqueue") { enqueueFile(item) }
+            Button("Play") { playFile(track) }
+            Button("Enqueue") { enqueueFile(track) }
             Divider()
-            Button("Add to Assets") { _ = importToAssets([item.url]) }
+            Button("Add to Assets") { _ = importToAssets([track.url]) }
             Button("Reveal in Finder") {
                 #if os(macOS)
-                NSWorkspace.shared.activateFileViewerSelecting([item.url])
+                NSWorkspace.shared.activateFileViewerSelecting([track.url])
                 #endif
+            }
+            Divider()
+            Button("Remove from Library") {
+                mediaLibrary.removeTrack(id: track.id)
+            }
+            Button("Move to Trash", role: .destructive) {
+                _ = mediaLibrary.trashTrack(id: track.id)
             }
         }
     }

@@ -1,10 +1,10 @@
 import Foundation
 
-// Flat-scan catalog for the dedicated Assets library root. Unlike
-// `MediaCatalog` (which is used by the Media sidebar and groups by
-// first-level folder), this catalog is a single flat list of every
-// indexable file under the root — the Asset Library view renders one
-// grid with kind filters, so folder grouping would just add chrome.
+// Flat-scan catalog for the dedicated Assets library root. Unlike the
+// Media sidebar (which groups by first-level folder via MediaLibrary),
+// this catalog is a single flat list of every indexable file under the
+// root — the Asset Library view renders one grid with kind filters, so
+// folder grouping would just add chrome.
 //
 // Indexes all MediaKind files (video / audio / image). The asset library
 // is the one place images get surfaced as first-class items.
