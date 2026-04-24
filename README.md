@@ -22,8 +22,8 @@ brew install xcodegen            # one-time
 # optional (enables YouTube downloads):
 brew install yt-dlp ffmpeg
 
-git clone https://github.com/<you>/nextNote.git
-cd nextNote
+git clone https://github.com/NextAgentBC/NextNote.git
+cd NextNote
 make build                       # xcodegen + xcodebuild + ad-hoc sign
 make run                         # launch nextNote.app
 ```

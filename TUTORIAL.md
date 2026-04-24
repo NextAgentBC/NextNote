@@ -62,8 +62,8 @@ If `yt-dlp` / `ffmpeg` aren't installed, the app still runs — YouTube download
 ## 3. Build from Source
 
 ```sh
-git clone https://github.com/<you>/nextNote.git
-cd nextNote
+git clone https://github.com/NextAgentBC/NextNote.git
+cd NextNote
 brew install xcodegen     # one-time
 make build                # generates project + builds Debug
 make run                  # launches build.nosync/.../nextNote.app
