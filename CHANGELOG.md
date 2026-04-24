@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0 — 2026-04-24
+
+### AI Soul — Phase C begins
+
+Day-to-day ergonomics for the CLI-first workflow shipped in 0.2.0.
+
+- **Open Today's Daily Note** (⌘⇧D) — materializes `10_Daily/YYYY-MM-DD.md` from `99_System/Templates/Daily_Note.md` if missing, opens as a tab. Falls back to a minimal skeleton when the preset isn't seeded.
+- **Quick Capture HUD** (⌘⇧N) — floating overlay with a textarea + destination picker (Swipe / Inbox / Ingest). Auto-pastes a URL or long-selection from the clipboard on open. Composes the right slash command and fires it through the embedded terminal — the skill owns file writes.
+- **Apply AI Soul Preset** manual item under the Library menu — re-seed or update an existing vault without re-running first-launch setup. Idempotent; never overwrites user edits.
+- **AI menu**: now carries 4 entries (Run Skill, Show Terminal, Open Daily Note, Quick Capture) with their accelerators.
+
 ## 0.2.0 — 2026-04-24
 
 ### AI Soul — Phase A + B shipped

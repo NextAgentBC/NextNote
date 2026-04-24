@@ -241,12 +241,18 @@ URL / PDF / book         →  /swipe-save  →  80_Raw/<topic>/YYYY-MM-DD-slug.m
 - 验收: 一周跑下来，60_Canvas/YYYY-Www/ 完整生成，有草稿、有 swipe、有 ingest 产出
 
 ### Phase D — 砍自建 AI + 人格硬化 (2 周)
-- [ ] AIChatPanel 降级为 opt-in，默认关闭
-- [ ] MLX 模型下载改为可选 (Settings → Advanced)
-- [ ] 删除 AITextService 多数动作，仅留 polish/translate 作"无网降级"
-- [ ] git pre-commit hook: 校验 Soul.md lock 块未改
-- [ ] `consolidate-memory` skill 集成（Anthropic 官方的），Schedule 挂每周日
-- 验收: nextNote bundle 体积下降 ≥ 50%，首启流程无需下模型
+- [ ] **工具栏 🧠 脑图标改行**: 现在点击开 `AIChatPanel` (本地 MLX 自建 chat)。改为触发 `appState.showCommandPalette.toggle()` — 与 ⌘K 同行为。图标保留但变成"AI 入口" = palette
+- [ ] **AIChatPanel 降级 opt-in**: 默认关闭。Settings → Advanced 里有 toggle "启用经典 AI Chat (已废弃)" — 默认关。开启后 brain 图标长按或右键才显示。
+- [ ] 删除 `AITextService` 多数动作；仅保留 polish / translate 作为"无网降级"工具（菜单栏 Tools 子菜单）。AIActionPanel 整体退役。
+- [ ] MLX 模型下载改为可选 (Settings → Advanced → AI → "下载本地模型")，首启流程完全不触发
+- [ ] `showMediaLibrary` 式残余 state 清理：AppState 里 `showAIPanel` 字段迁移/删除
+- [ ] git pre-commit hook: 校验 `Soul.md` 的 `<!-- editable:start -->` 块外内容未改
+- [ ] `consolidate-memory` skill 挂 Schedule (每周日 22:00)
+- 验收:
+  - nextNote bundle 体积 ≤ 50% 当前 (MLX 依赖去除后)
+  - 首启 wizard 不提 AI 模型下载
+  - 🧠 图标点击 = 开 palette，不再弹 "Model not loaded" 提示
+  - 经典 AIChatPanel 默认不可达，仅设置里能重开
 
 ---
 

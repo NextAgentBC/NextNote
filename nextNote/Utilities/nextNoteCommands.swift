@@ -50,9 +50,9 @@ struct NextNoteCommands: Commands {
             .keyboardShortcut("f", modifiers: .command)
         }
 
-        // AI menu — command palette + embedded terminal toggle. Phase B of
-        // AI_PLAN.md surfaces these as top-level accelerators so CLI
-        // workflows are one keystroke away.
+        // AI menu — command palette + embedded terminal toggle + daily-note
+        // + capture HUD. Phase B+C of AI_PLAN.md surfaces these as top-level
+        // accelerators so CLI workflows are one keystroke away.
         CommandMenu("AI") {
             Button(appState.showCommandPalette ? "Close Command Palette" : "Run Skill…") {
                 appState.showCommandPalette.toggle()
@@ -63,6 +63,20 @@ struct NextNoteCommands: Commands {
                 appState.showTerminal.toggle()
             }
             .keyboardShortcut("t", modifiers: [.command, .shift])
+
+            Divider()
+
+            Button("Open Today's Daily Note") {
+                appState.triggerOpenDailyNote = true
+            }
+            .keyboardShortcut("d", modifiers: [.command, .shift])
+            .disabled(libraryRoots.notesRoot == nil)
+
+            Button("Quick Capture…") {
+                appState.showCaptureHUD = true
+            }
+            .keyboardShortcut("n", modifiers: [.command, .shift])
+            .disabled(libraryRoots.notesRoot == nil)
         }
 
         // Merge into the system View menu (NavigationSplitView already adds
@@ -96,6 +110,13 @@ struct NextNoteCommands: Commands {
             Button("Change Ebooks Folder…") {
                 Task { await libraryRoots.pick(kind: .ebooks) }
             }
+
+            Divider()
+
+            Button("Apply AI Soul Preset to Notes…") {
+                appState.triggerApplyPreset = true
+            }
+            .disabled(libraryRoots.notesRoot == nil)
 
             Divider()
 

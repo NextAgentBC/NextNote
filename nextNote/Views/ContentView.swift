@@ -72,6 +72,18 @@ struct ContentView: View {
                 appState.triggerRescanLibrary = false
             }
         }
+        .onChange(of: appState.triggerOpenDailyNote) { _, v in
+            if v {
+                openDailyNote()
+                appState.triggerOpenDailyNote = false
+            }
+        }
+        .onChange(of: appState.triggerApplyPreset) { _, v in
+            if v {
+                applyPreset()
+                appState.triggerApplyPreset = false
+            }
+        }
         // Rescan whenever the window regains focus — user dropped a file in
         // Finder, switches back, expects to see it instantly.
         #if os(macOS)
@@ -191,6 +203,47 @@ struct ContentView: View {
         await MediaLibrary.shared.scanRoot(libraryRoots.mediaRoot)
     }
 
+    // MARK: - AI workflow (Phase C)
+
+    @MainActor
+    private func openDailyNote() {
+        do {
+            let resolved = try DailyNoteRouter.resolve(notesRoot: libraryRoots.notesRoot)
+            appState.openVaultFile(relativePath: resolved.relativePath) {
+                let content = (try? String(contentsOf: resolved.absoluteURL, encoding: .utf8)) ?? ""
+                let title = ((resolved.relativePath as NSString).lastPathComponent as NSString).deletingPathExtension
+                return TextDocument(title: title, content: content, fileType: .md)
+            }
+            appState.selectedSidebarPath = resolved.relativePath
+            if resolved.wasCreated {
+                Task { await rescanLibrary() }   // new file — refresh sidebar tree
+            }
+        } catch {
+            appState.lastSaveError = "Daily note: \(error.localizedDescription)"
+        }
+    }
+
+    private func applyPreset() {
+        guard let notesRoot = libraryRoots.notesRoot else {
+            appState.lastSaveError = "Notes root is not configured."
+            return
+        }
+        do {
+            let report = try VaultPresetSeeder.seed(into: notesRoot)
+            Task { await rescanLibrary() }
+            // Surface the report via the save-error channel (a shared banner) —
+            // not a real error, but the same UX lane reaches the user.
+            let parts: [String] = [
+                report.copied.isEmpty ? nil : "copied \(report.copied.count)",
+                report.skipped.isEmpty ? nil : "kept \(report.skipped.count) identical",
+                report.conflicts.isEmpty ? nil : "skipped \(report.conflicts.count) conflicting"
+            ].compactMap { $0 }
+            appState.lastSaveError = "AI Soul preset: " + (parts.isEmpty ? "already up to date." : parts.joined(separator: ", ") + ".")
+        } catch {
+            appState.lastSaveError = "Preset apply failed: \(error.localizedDescription)"
+        }
+    }
+
     private func importFiles(from urls: [URL]) {
         let epubs = urls.filter { $0.pathExtension.lowercased() == "epub" }
         let rest = urls.filter { $0.pathExtension.lowercased() != "epub" }
@@ -253,7 +306,15 @@ struct ContentView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
+        .overlay {
+            if appState.showCaptureHUD {
+                CaptureHUD()
+                    .environmentObject(appState)
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            }
+        }
         .animation(.easeOut(duration: 0.15), value: appState.showCommandPalette)
+        .animation(.easeOut(duration: 0.15), value: appState.showCaptureHUD)
         #else
         NavigationStack {
             editorArea

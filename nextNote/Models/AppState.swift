@@ -26,6 +26,14 @@ final class AppState: ObservableObject {
     /// Command injected into the embedded terminal by the palette or other
     /// surfaces. TerminalPane consumes the value and clears it.
     @Published var pendingTerminalCommand: String? = nil
+    /// One-shot trigger from AI menu / sidebar button to open today's
+    /// `10_Daily/YYYY-MM-DD.md`. ContentView observes + resets.
+    @Published var triggerOpenDailyNote: Bool = false
+    /// One-shot trigger from Library menu to manually re-apply the AI Soul
+    /// preset to the current Notes root. ContentView observes + resets.
+    @Published var triggerApplyPreset: Bool = false
+    /// Capture HUD visibility — ⌘⇧N toggles.
+    @Published var showCaptureHUD: Bool = false
     /// Active book — derived from the active tab's `bookID`. Kept as a
     /// convenience @Published so non-tab surfaces (sidebar highlights) don't
     /// have to poke into openTabs.
