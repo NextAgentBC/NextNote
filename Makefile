@@ -1,4 +1,4 @@
-.PHONY: gen build run clean sign help release
+.PHONY: gen build run clean sign help release release-signed notarize
 
 # Build output lives in build.nosync/ — the .nosync suffix tells iCloud
 # Documents to skip the directory, preventing multi-GB .app bundles from
@@ -8,13 +8,24 @@ BUILD_DIR := build.nosync
 
 VERSION := $(shell awk '/MARKETING_VERSION/ {gsub(/"/,""); gsub(/,/,""); print $$NF}' project.yml | head -1)
 
+# Developer ID Application — override on the command line if you need a
+# different team: `make release-signed SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)"`
+SIGN_IDENTITY ?= Developer ID Application: MMC Wellness Group Inc. (WA4JUD762R)
+# Keychain profile holding Apple-ID + app-specific password for notarytool.
+# Set up once with:
+#   xcrun notarytool store-credentials nextNote-notary \
+#     --apple-id "you@example.com" --team-id "WA4JUD762R" --password "app-specific-pwd"
+NOTARY_PROFILE ?= nextNote-notary
+
 help:
-	@echo "nextNote build targets:"
-	@echo "  make gen      — regenerate nextNote.xcodeproj via xcodegen"
-	@echo "  make build    — xcodebuild Debug (codesigns via post-step to survive iCloud xattrs)"
-	@echo "  make run      — build + launch nextNote.app"
-	@echo "  make release  — build + package dist/nextNote-<VERSION>.{zip,dmg}"
-	@echo "  make clean    — remove generated project and build products"
+	@echo "NextNote build targets:"
+	@echo "  make gen             — regenerate nextNote.xcodeproj via xcodegen"
+	@echo "  make build           — xcodebuild Debug (ad-hoc signed)"
+	@echo "  make run             — build + launch nextNote.app"
+	@echo "  make release         — ad-hoc signed dist/NextNote-<VER>.{zip,dmg}"
+	@echo "  make release-signed  — Developer-ID-signed + notarized + stapled dist/"
+	@echo "                         (needs SIGN_IDENTITY + NOTARY_PROFILE configured)"
+	@echo "  make clean           — remove generated project and build products"
 
 gen:
 	xcodegen generate
@@ -133,4 +144,87 @@ release: build
 		"dist/NextNote-$(VERSION).dmg" >/dev/null; \
 	rm -rf "$(DMG_STAGING)"
 	@echo ""
+	@ls -lh dist/
+
+# ────────────────────────────────────────────────────────────────────────────
+# Developer-ID signed + notarized release.
+#
+# Prerequisites (one-time):
+#   1. Paid Apple Developer Program account.
+#   2. Developer ID Application certificate installed in the login Keychain.
+#      Verify with: security find-identity -v -p codesigning
+#   3. App-specific password at appleid.apple.com → Security.
+#   4. Store the notary credential in the keychain (one-time):
+#        xcrun notarytool store-credentials nextNote-notary \
+#          --apple-id "you@example.com" \
+#          --team-id  "WA4JUD762R" \
+#          --password "xxxx-xxxx-xxxx-xxxx"
+#
+# Override identity / profile via env if needed:
+#   make release-signed SIGN_IDENTITY="Developer ID Application: Foo (XXXX)" \
+#                       NOTARY_PROFILE=my-profile
+#
+# Result: dist/NextNote-<VER>.{zip,dmg} — double-click and run, zero warnings.
+# ────────────────────────────────────────────────────────────────────────────
+
+release-signed: build
+	@echo "▶ Signing NextNote $(VERSION) with: $(SIGN_IDENTITY)"
+	@rm -rf dist $(DMG_STAGING)
+	@mkdir -p dist $(DMG_STAGING)
+	@APP=$$(find $(BUILD_DIR) -name "nextNote.app" -type d | head -1); \
+	if [ -z "$$APP" ]; then echo "release-signed: nextNote.app not found"; exit 1; fi; \
+	STAGED="$(DMG_STAGING)/NextNote.app"; \
+	cp -R "$$APP" "$$STAGED"; \
+	echo "  → deep codesign with hardened runtime + timestamp"; \
+	codesign --force --deep --options runtime --timestamp \
+		--entitlements nextNote/nextNote.release.entitlements \
+		--sign "$(SIGN_IDENTITY)" \
+		"$$STAGED" || exit 1; \
+	echo "  → verify signature"; \
+	codesign --verify --deep --strict --verbose=2 "$$STAGED" || exit 1; \
+	echo "  → zip for notarytool upload"; \
+	ZIP="$(DMG_STAGING)/notary-upload.zip"; \
+	ditto -c -k --keepParent "$$STAGED" "$$ZIP"; \
+	echo "  → submit to Apple notary service (this takes 1–5 minutes)…"; \
+	xcrun notarytool submit "$$ZIP" \
+		--keychain-profile "$(NOTARY_PROFILE)" \
+		--wait || exit 1; \
+	echo "  → staple notarization ticket onto app"; \
+	xcrun stapler staple "$$STAGED" || exit 1; \
+	xcrun stapler validate "$$STAGED" || exit 1; \
+	rm -f "$$ZIP"; \
+	echo "  → package LICENSE + NOTICE + README"; \
+	cp LICENSE "$(DMG_STAGING)/LICENSE.txt"; \
+	cp NOTICE "$(DMG_STAGING)/NOTICE.txt"; \
+	{ \
+	  echo "NextNote $(VERSION)"; \
+	  echo ""; \
+	  echo "1. Drag NextNote.app into /Applications."; \
+	  echo "2. Double-click to launch — that's it."; \
+	  echo "   (Signed and notarized by Apple; no Gatekeeper warnings.)"; \
+	  echo ""; \
+	  echo "3. Pick folders for Notes / Media / Ebooks on the Welcome screen,"; \
+	  echo "   or click \"Use Defaults for All\"."; \
+	  echo ""; \
+	  echo "Optional tools:"; \
+	  echo "  brew install yt-dlp ffmpeg      # YouTube downloads"; \
+	  echo "  brew install ollama             # local LLM provider"; \
+	  echo ""; \
+	  echo "Docs:    https://github.com/NextAgentBC/NextNote"; \
+	  echo "License: Apache 2.0 (see LICENSE.txt + NOTICE.txt)"; \
+	} > "$(DMG_STAGING)/README.txt"; \
+	ln -s /Applications "$(DMG_STAGING)/Applications"; \
+	echo "  → zip for release"; \
+	ditto --norsrc --noextattr --noacl -c -k --keepParent "$$STAGED" "dist/NextNote-$(VERSION).zip"; \
+	echo "  → build DMG"; \
+	hdiutil create -volname "NextNote $(VERSION)" \
+		-srcfolder "$(DMG_STAGING)" \
+		-ov -format UDZO \
+		"dist/NextNote-$(VERSION).dmg" >/dev/null; \
+	echo "  → staple DMG"; \
+	xcrun stapler staple "dist/NextNote-$(VERSION).dmg" || exit 1; \
+	xcrun stapler validate "dist/NextNote-$(VERSION).dmg" || exit 1; \
+	rm -rf "$(DMG_STAGING)"
+	@echo ""
+	@echo "✅ Signed + notarized release ready:"
 	@ls -lh dist/
