@@ -6,6 +6,7 @@
 
 - **YouTube video playback — silent 4K / 1440p downloads.** YouTube only ships H.264 up to 1080p; higher tiers come as VP9 or AV1, which AVPlayer can't decode on older macOS or Intel Macs, so the picture went blank while audio still played. After a successful download, the file is now probed and — if the video track is VP9 / AV1 — re-encoded in place to HEVC (`hvc1`) via VideoToolbox hardware encode. H.264 / HEVC downloads pass through unchanged.
 - **Media sidebar didn't refresh after a YouTube download.** New files landed on disk but the left sidebar's folder tree only re-scanned on window focus / every 15 s, so a fresh download stayed invisible until the user clicked away and back. Downloads now trigger an immediate catalog rescan.
+- **Auto-classified downloads landed outside the Media library root.** When the yt-dlp download folder and the Media library root differed (common setup: yt-dlp writes to `~/Downloads/yt`, Media root is `~/Downloads/yt/Music`), the AI classifier created `<Artist>/` subfolders next to the library root instead of inside it — so the files never showed up in the left sidebar. Classification now targets the Media library root directly.
 - **ffmpeg hang on post-download transcode.** The transcoder launched ffmpeg without `-nostdin`, so it stalled at ffmpeg's interactive prompt. Both the in-app transcoder and `scripts/repair-videos.sh` now pass `-nostdin`.
 
 ### Features

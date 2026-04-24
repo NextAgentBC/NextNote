@@ -9,6 +9,7 @@ import AppKit
 struct YouTubeDownloadView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var appState: AppState
+    @EnvironmentObject private var libraryRoots: LibraryRoots
     @StateObject private var locator = YTDLPLocator.shared
     @StateObject private var library = MediaLibrary.shared
     @StateObject private var player = AmbientPlayer.shared
@@ -293,6 +294,13 @@ struct YouTubeDownloadView: View {
                 )
                 // Classify + move BEFORE registering in library — keeps the
                 // bookmark aimed at the final path from the start.
+                //
+                // Prefer the Media library root over the yt-dlp download
+                // folder so the classifier creates <mediaRoot>/<Artist>/...
+                // subdirectories. Otherwise auto-classified files land in
+                // sibling folders next to mediaRoot (e.g. ~/yt/Unknown/)
+                // and never appear in the left sidebar, which only scans
+                // under mediaRoot.
                 var finalURL = result.outputURL
                 if autoClassify {
                     await MainActor.run { statusLine = "Classifying with AI…" }
@@ -304,10 +312,11 @@ struct YouTubeDownloadView: View {
                         tags: m.tags,
                         playlist: m.playlist
                     )
+                    let classifyRoot = await MainActor.run { libraryRoots.mediaRoot } ?? folder
                     do {
                         finalURL = try await MediaCategorizer.organize(
                             url: result.outputURL,
-                            underRoot: folder,
+                            underRoot: classifyRoot,
                             preferredTitle: m.title,
                             context: ctx.isEmpty ? nil : ctx
                         )
