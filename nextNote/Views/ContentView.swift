@@ -244,6 +244,16 @@ struct ContentView: View {
             editorArea
         }
         .toolbar { macToolbar }
+        .overlay(alignment: .top) {
+            if appState.showCommandPalette {
+                CommandPalette()
+                    .environmentObject(appState)
+                    .environmentObject(libraryRoots)
+                    .padding(.top, 80)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .animation(.easeOut(duration: 0.15), value: appState.showCommandPalette)
         #else
         NavigationStack {
             editorArea
@@ -305,6 +315,17 @@ struct ContentView: View {
             }
 
             editorAndDock
+
+            #if os(macOS)
+            if appState.showTerminal {
+                Divider()
+                TerminalPane(
+                    workingDirectory: libraryRoots.notesRoot,
+                    pendingCommand: $appState.pendingTerminalCommand
+                )
+                .frame(minHeight: 120, idealHeight: 220, maxHeight: 400)
+            }
+            #endif
 
             Divider()
             AmbientBar()

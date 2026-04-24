@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.2.0 — 2026-04-24
+
+### AI Soul — Phase A + B shipped
+
+First major leap toward the [AI_PLAN.md](AI_PLAN.md) vision: nextNote becomes a first-class host for **Claude Code / Gemini CLI** workflows, with the vault as the single source of truth for identity, memory, and skills.
+
+**Phase A — vault template + preset seeder**
+- New **"Use AI Soul preset"** checkbox in first-run Library setup. On start, copies a full opinionated vault template into the Notes root (idempotent; never overwrites user edits).
+- Template fuses four methodologies: OrbitOS workflow folders, Karpathy LLM wiki compounding (`80_Raw/` → `40_Wiki/`), Soul/auto-memory (Soul.md + typed memory files), and Dan Koe weekly canvas + swipe file.
+- Ships **21 slash-skills** under `99_System/.claude/skills/`:
+  - knowledge: `ingest`, `query`, `lint`, `parse-knowledge`
+  - creator: `weekly-canvas`, `swipe-save`, `coach`, `brand-strategy`, `content-engine`, `offer-builder`, `publish-ready`
+  - daily: `start-my-day`, `kickoff`, `research`, `archive`, `ask`, `brainstorm`
+  - digest: `ai-newsletters`, `ai-products`
+  - hygiene: `consolidate-memory`, `raw-gc` — hard budgets (200-line MEMORY.md, 2 GB `80_Raw/`, 90-day TTL) with `_trash/YYYY-MM-DD/` staging for 30-day recovery
+- 6 markdown templates (Daily / Project / Wiki / Inbox / Canvas / Raw) + 2 seed personas (SE_Architect, General_FirstPrinciples).
+
+**Phase B — embedded terminal + command palette**
+- **Embedded terminal** (⌘⇧T) via [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm). Docks below the editor; shell cwd auto-pins to the vault's Notes root so slash-skills resolve relative paths. Persists open/closed across launches.
+- **Command palette** (⌘K): scans `99_System/.claude/skills/*/SKILL.md` from the active vault, fuzzy-ranks by query, arrow-key navigable. Enter runs `claude "/<skill>"` in the terminal and auto-opens the pane.
+- New **AI menu** in the menubar surfaces both shortcuts alongside their keyboard accelerators.
+
+**Notes**
+- 0.1.x AI stack (MLX / AIChatPanel / AITextService) is untouched — still shippable. Phase D will prune it.
+- Works with vanilla Claude Code or Gemini CLI — no custom AI code added to nextNote itself.
+
 ## 0.1.4 — 2026-04-24
 
 ### License change

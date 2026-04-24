@@ -50,6 +50,21 @@ struct NextNoteCommands: Commands {
             .keyboardShortcut("f", modifiers: .command)
         }
 
+        // AI menu — command palette + embedded terminal toggle. Phase B of
+        // AI_PLAN.md surfaces these as top-level accelerators so CLI
+        // workflows are one keystroke away.
+        CommandMenu("AI") {
+            Button(appState.showCommandPalette ? "Close Command Palette" : "Run Skill…") {
+                appState.showCommandPalette.toggle()
+            }
+            .keyboardShortcut("k", modifiers: .command)
+
+            Button(appState.showTerminal ? "Hide Terminal" : "Show Terminal") {
+                appState.showTerminal.toggle()
+            }
+            .keyboardShortcut("t", modifiers: [.command, .shift])
+        }
+
         // Merge into the system View menu (NavigationSplitView already adds
         // Show/Hide Sidebar ⌃⌘S). Using CommandGroup(after:) avoids the
         // duplicate top-level "View" menu a CommandMenu would create.

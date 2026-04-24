@@ -19,6 +19,13 @@ final class AppState: ObservableObject {
     @Published var showMediaLibrary: Bool = false
     @Published var showYouTubeDownload: Bool = false
     @Published var showAssetLibrary: Bool = false
+    @Published var showTerminal: Bool = UserDefaults.standard.bool(forKey: "nextnote.terminal.show") {
+        didSet { UserDefaults.standard.set(showTerminal, forKey: "nextnote.terminal.show") }
+    }
+    @Published var showCommandPalette: Bool = false
+    /// Command injected into the embedded terminal by the palette or other
+    /// surfaces. TerminalPane consumes the value and clears it.
+    @Published var pendingTerminalCommand: String? = nil
     /// Active book — derived from the active tab's `bookID`. Kept as a
     /// convenience @Published so non-tab surfaces (sidebar highlights) don't
     /// have to poke into openTabs.
