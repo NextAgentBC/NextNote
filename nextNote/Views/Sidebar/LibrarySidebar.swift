@@ -10,12 +10,14 @@ struct LibrarySidebar: View {
     @EnvironmentObject private var vault: VaultStore
     @EnvironmentObject private var libraryRoots: LibraryRoots
     @EnvironmentObject private var mediaCatalog: MediaCatalog
+    @EnvironmentObject private var assetCatalog: AssetCatalog
     @Environment(\.modelContext) private var modelContext
 
     @Query(sort: \Book.title) private var books: [Book]
 
     @State private var ebooksExpanded = true
     @State private var mediaExpanded = true
+    @State private var assetsExpanded = true
     @State private var expandedFolders: Set<String> = []
     /// Key of the folder-group row currently being hovered by a drag — used
     /// to tint the header so the user sees the drop target.
@@ -31,6 +33,9 @@ struct LibrarySidebar: View {
 
             Divider()
             mediaTray
+
+            Divider()
+            assetsTray
         }
         .onChange(of: appState.triggerRescanLibrary) { _, v in
             if v {
@@ -54,6 +59,129 @@ struct LibrarySidebar: View {
                     BooksSection(books: books)
                 }
                 .frame(maxHeight: 260)
+            }
+        }
+    }
+
+    // MARK: - Assets
+
+    /// Collapsible tray for the 素材库 / Asset Library. Header opens the
+    /// full grid view (⌘⇧A). Expanded body lists recent files inline so
+    /// the user can drag items directly into a note without opening the
+    /// sheet every time.
+    private var assetsTray: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 0) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        assetsExpanded.toggle()
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: assetsExpanded ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 12)
+                        Image(systemName: "photo.stack")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.secondary)
+                        Text("Assets")
+                            .font(.caption.bold())
+                            .foregroundStyle(.secondary)
+                        if assetCatalog.assets.count > 0 {
+                            Text("\(assetCatalog.assets.count)")
+                                .font(.caption2.monospacedDigit())
+                                .foregroundStyle(.tertiary)
+                        }
+                        Spacer()
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                // "Open library" shortcut on the header — power users don't
+                // have to dig through the Media menu to get to the grid.
+                Button {
+                    appState.showAssetLibrary = true
+                } label: {
+                    Image(systemName: "rectangle.grid.2x2")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Open Asset Library (⌘⇧A)")
+                .padding(.trailing, 10)
+            }
+            .background(Color.secondary.opacity(0.05))
+
+            if assetsExpanded {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        let recent = Array(assetCatalog.assets.prefix(12))
+                        if recent.isEmpty {
+                            emptyHint("Open the Asset Library (⌘⇧A) and drop images, videos, or audio.")
+                        } else {
+                            ForEach(recent) { asset in
+                                assetRow(asset)
+                            }
+                            if assetCatalog.assets.count > recent.count {
+                                Button {
+                                    appState.showAssetLibrary = true
+                                } label: {
+                                    Text("View all \(assetCatalog.assets.count) →")
+                                        .font(.caption)
+                                        .foregroundStyle(.blue)
+                                        .padding(.vertical, 4)
+                                        .padding(.leading, 14)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+                .frame(maxHeight: 220)
+            }
+        }
+        .task {
+            _ = libraryRoots.ensureAssetsRoot()
+            await assetCatalog.scan(root: libraryRoots.assetsRoot)
+        }
+        .onReceive(libraryRoots.$assetsRoot) { url in
+            Task { await assetCatalog.scan(root: url) }
+        }
+    }
+
+    /// Single-line row inside the Assets tray. Draggable so the user can
+    /// pull it into a markdown note without opening the full library.
+    @ViewBuilder
+    private func assetRow(_ asset: AssetCatalog.Asset) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: asset.kind.iconName)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .frame(width: 14)
+            Text(asset.title)
+                .font(.system(size: 13))
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer()
+        }
+        .padding(.vertical, 3)
+        .padding(.leading, 26)
+        .padding(.trailing, 12)
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2) {
+            appState.showAssetLibrary = true
+        }
+        .draggable(asset.url)
+        .contextMenu {
+            Button("Open in Library") { appState.showAssetLibrary = true }
+            Button("Reveal in Finder") {
+                #if os(macOS)
+                NSWorkspace.shared.activateFileViewerSelecting([asset.url])
+                #endif
             }
         }
     }
