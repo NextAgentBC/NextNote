@@ -1,11 +1,19 @@
-# nextNote
+# NextNote
+
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![macOS 14+](https://img.shields.io/badge/macOS-14%2B-lightgrey.svg)](https://www.apple.com/macos/)
+[![Swift 6.0](https://img.shields.io/badge/swift-6.0-orange.svg)](https://swift.org)
+[![Release](https://img.shields.io/github/v/release/NextAgentBC/NextNote?include_prereleases)](https://github.com/NextAgentBC/NextNote/releases)
+[![Stars](https://img.shields.io/github/stars/NextAgentBC/NextNote?style=social)](https://github.com/NextAgentBC/NextNote)
 
 Local-first macOS app for Markdown notes, EPUB reading, and media playback. Three separate on-disk roots (Notes / Media / Ebooks), multi-provider AI (on-device MLX + remote OpenAI-compatible + Gemini), optional YouTube downloads via `yt-dlp`. No account, no telemetry. macOS 14+.
 
 - End-user docs → **[USER_GUIDE.md](USER_GUIDE.md)**
 - Contributor / architecture reference → **[TUTORIAL.md](TUTORIAL.md)**
+- LLM provider setup → **[docs/LLM_SETUP.md](docs/LLM_SETUP.md)**
 - Release process → **[RELEASE.md](RELEASE.md)**
 - Known rough edges + UX roadmap → **[UX_AUDIT.md](UX_AUDIT.md)**
+- Changelog → **[CHANGELOG.md](CHANGELOG.md)**
 
 ## Quick start
 
