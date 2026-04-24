@@ -77,10 +77,37 @@ final class LibraryRoots: ObservableObject {
     /// on first access. Called lazily when the user opens the Asset Library —
     /// existing 0.1.x installs don't get a setup prompt because this fires
     /// only on demand.
+    ///
+    /// Also guarantees the five default category subfolders exist so new
+    /// imports land in a consistent layout (images / videos / audio / docs
+    /// / other). Users can add custom subfolders alongside these.
     @discardableResult
     func ensureAssetsRoot() -> URL? {
-        if let existing = assetsRoot { return existing }
-        return useDefault(kind: .assets)
+        let root: URL
+        if let existing = assetsRoot {
+            root = existing
+        } else if let created = useDefault(kind: .assets) {
+            root = created
+        } else {
+            return nil
+        }
+        ensureAssetSubfolders(under: root)
+        return root
+    }
+
+    /// Built-in Asset Library categories. `other` is the fallback for
+    /// everything MediaKind doesn't classify (PDFs, zips, etc.), and
+    /// `docs` holds text-like references the user wants near the media.
+    static let defaultAssetSubfolders: [String] = [
+        "images", "videos", "audio", "docs", "other",
+    ]
+
+    private func ensureAssetSubfolders(under root: URL) {
+        let fm = FileManager.default
+        for name in Self.defaultAssetSubfolders {
+            let dir = root.appendingPathComponent(name, isDirectory: true)
+            try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
     }
 
     init() {

@@ -405,16 +405,22 @@ struct YouTubeDownloadView: View {
                 var finalURL = result.outputURL
                 let destination: SaveDestination = await MainActor.run { saveTo }
                 if destination == .assets {
-                    // Assets: flat scratch pool. Skip AI classify; just move
-                    // the file straight into the Assets root (no artist
-                    // subfolder) so it shows up in the Asset Library grid.
+                    // Assets: route into the kind-specific subfolder
+                    // (videos/ or audio/) so it shows up in the Asset
+                    // Library grid under the right category, alongside
+                    // Finder-imported files.
                     let assetsRoot: URL? = await MainActor.run {
                         libraryRoots.ensureAssetsRoot()
                     }
                     if let assetsRoot {
                         let src = result.outputURL
+                        let bucket = chosenMode == .audio ? "audio" : "videos"
+                        let bucketDir = assetsRoot.appendingPathComponent(bucket, isDirectory: true)
+                        try? FileManager.default.createDirectory(
+                            at: bucketDir, withIntermediateDirectories: true
+                        )
                         let dest: URL = await MainActor.run {
-                            uniqueDestination(for: src.lastPathComponent, in: assetsRoot)
+                            uniqueDestination(for: src.lastPathComponent, in: bucketDir)
                         }
                         do {
                             try FileManager.default.moveItem(at: src, to: dest)

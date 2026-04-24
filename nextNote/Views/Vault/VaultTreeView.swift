@@ -91,24 +91,28 @@ struct VaultTreeView: View {
 
     @ToolbarContentBuilder
     private var treeToolbar: some ToolbarContent {
+        // Single "+" Menu holding both New Note and New Folder — keeps the
+        // sidebar toolbar compact so neither action hides in the overflow
+        // chevron on narrow window widths.
         ToolbarItem(placement: .automatic) {
-            Button {
-                newNoteParent = targetFolderPath()
-                newNoteName = ""
+            Menu {
+                Button {
+                    newNoteParent = targetFolderPath()
+                    newNoteName = ""
+                } label: {
+                    Label("New Note", systemImage: "doc.badge.plus")
+                }
+                Button {
+                    newFolderParent = targetFolderPath()
+                    newFolderName = ""
+                } label: {
+                    Label("New Folder", systemImage: "folder.badge.plus")
+                }
             } label: {
-                Image(systemName: "doc.badge.plus")
+                Image(systemName: "plus")
             }
-            .help("New Note")
-            .disabled(vault.root == nil)
-        }
-        ToolbarItem(placement: .automatic) {
-            Button {
-                newFolderParent = targetFolderPath()
-                newFolderName = ""
-            } label: {
-                Image(systemName: "folder.badge.plus")
-            }
-            .help("New Folder")
+            .menuIndicator(.hidden)
+            .help("New Note / Folder")
             .disabled(vault.root == nil)
         }
         ToolbarItem(placement: .automatic) {

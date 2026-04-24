@@ -399,7 +399,7 @@ private func processInline(_ text: String) -> String {
 /// embed kind (img / video / audio) plus the original src and alt. The
 /// sentinel is restored after HTML escaping has happened.
 private func replaceEmbeds(in text: String) -> String {
-    let pattern = #"!\[([^\]]*)\]\(([^\)]+)\)"#
+    let pattern = #"!\[(.*?)\]\(([^\)]+)\)"#
     guard let regex = try? NSRegularExpression(pattern: pattern) else { return text }
     let ns = text as NSString
     let matches = regex.matches(in: text, range: NSRange(location: 0, length: ns.length))

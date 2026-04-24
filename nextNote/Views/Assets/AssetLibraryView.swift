@@ -27,6 +27,11 @@ struct AssetLibraryView: View {
     @State private var importError: String?
     @State private var previewAsset: AssetCatalog.Asset?
     @State private var deleteTarget: AssetCatalog.Asset?
+    /// nil → All folders. Empty string → loose files at the root (shown
+    /// under "Loose"). Non-empty → that specific first-level subfolder.
+    @State private var folderFilter: String? = nil
+    @State private var showNewFolderAlert: Bool = false
+    @State private var newFolderName: String = ""
 
     enum KindFilter: String, CaseIterable, Identifiable {
         case all     = "All"
@@ -52,9 +57,21 @@ struct AssetLibraryView: View {
         VStack(spacing: 0) {
             header
             Divider()
-            content
+            HStack(spacing: 0) {
+                folderSidebar
+                    .frame(width: 180)
+                Divider()
+                content
+            }
         }
-        .frame(minWidth: 760, minHeight: 520)
+        .frame(minWidth: 860, minHeight: 560)
+        .alert("New Folder", isPresented: $showNewFolderAlert) {
+            TextField("Name", text: $newFolderName)
+            Button("Cancel", role: .cancel) { newFolderName = "" }
+            Button("Create") { commitNewFolder() }
+        } message: {
+            Text("Creates a subfolder under the Assets root.")
+        }
         .task {
             _ = libraryRoots.ensureAssetsRoot()
             await assetCatalog.scan(root: libraryRoots.assetsRoot)
@@ -88,54 +105,179 @@ struct AssetLibraryView: View {
 
     // MARK: - Header
 
+    /// Two-row header — titles + actions on top, filter + search on a
+    /// second row. Stops the whole thing from wrapping awkwardly when
+    /// the sheet is at its minimum width.
     private var header: some View {
-        HStack(spacing: 10) {
-            Text("Asset Library")
-                .font(.title2.bold())
+        VStack(spacing: 10) {
+            HStack(spacing: 10) {
+                Text("Asset Library")
+                    .font(.title2.bold())
+                    .lineLimit(1)
+                    .fixedSize()
+                Text("\(filteredAssets.count)")
+                    .font(.callout.monospacedDigit())
+                    .foregroundStyle(.secondary)
 
-            Text("\(filteredAssets.count)")
-                .font(.callout.monospacedDigit())
-                .foregroundStyle(.secondary)
+                Spacer(minLength: 8)
 
-            Spacer(minLength: 12)
-
-            Picker("", selection: $kindFilter) {
-                ForEach(KindFilter.allCases) { k in
-                    Text(k.rawValue).tag(k)
+                Button {
+                    openImportPanel()
+                } label: {
+                    Label("Import", systemImage: "square.and.arrow.down")
                 }
+                .help("Import files from disk")
+
+                Button {
+                    pasteFromClipboard()
+                } label: {
+                    Label("Paste", systemImage: "doc.on.clipboard")
+                }
+                .keyboardShortcut("v", modifiers: [.command])
+                .help("Paste image from clipboard (⌘V)")
+
+                Button {
+                    revealRootInFinder()
+                } label: {
+                    Image(systemName: "folder")
+                }
+                .help("Reveal the Assets folder in Finder")
+
+                Button("Done") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
             }
-            .pickerStyle(.segmented)
-            .frame(width: 300)
 
-            TextField("Search", text: $searchText)
-                .textFieldStyle(.roundedBorder)
-                .frame(width: 180)
+            HStack(spacing: 10) {
+                Picker("", selection: $kindFilter) {
+                    ForEach(KindFilter.allCases) { k in
+                        Text(k.rawValue).tag(k)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 360)
+                .labelsHidden()
 
-            Button {
-                openImportPanel()
-            } label: {
-                Label("Import…", systemImage: "square.and.arrow.down")
+                TextField("Search", text: $searchText)
+                    .textFieldStyle(.roundedBorder)
             }
-
-            Button {
-                pasteFromClipboard()
-            } label: {
-                Label("Paste", systemImage: "doc.on.clipboard")
-            }
-            .keyboardShortcut("v", modifiers: [.command])
-            .help("Paste image from clipboard (⌘V)")
-
-            Button {
-                revealRootInFinder()
-            } label: {
-                Image(systemName: "folder")
-            }
-            .help("Reveal the Assets folder in Finder")
-
-            Button("Done") { dismiss() }
-                .keyboardShortcut(.cancelAction)
         }
         .padding(12)
+    }
+
+    // MARK: - Folder sidebar
+
+    /// Left pane listing "All", "Loose", then one row per first-level
+    /// subfolder under the Assets root. Default category folders
+    /// (images / videos / audio / docs / other) always appear even
+    /// when empty, so new users see the organization scheme up front.
+    private var folderSidebar: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("Folders")
+                    .font(.caption.bold())
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button {
+                    newFolderName = ""
+                    showNewFolderAlert = true
+                } label: {
+                    Image(systemName: "folder.badge.plus")
+                        .font(.system(size: 11))
+                }
+                .buttonStyle(.borderless)
+                .help("New Folder")
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 10)
+            .padding(.bottom, 6)
+
+            Divider()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 2) {
+                    folderRow(label: "All", icon: "tray.full", value: nil)
+                    folderRow(label: "Loose", icon: "square.dashed", value: "")
+                    ForEach(sidebarFolderList, id: \.self) { name in
+                        folderRow(
+                            label: name,
+                            icon: folderIcon(for: name),
+                            value: name
+                        )
+                    }
+                }
+                .padding(.vertical, 6)
+            }
+        }
+        .background(Color(nsColor: .underPageBackgroundColor))
+    }
+
+    /// Merge default folders with actual disk folders — always show the 5
+    /// built-ins, add any user-created extras, alphabetical.
+    private var sidebarFolderList: [String] {
+        var set = Set(LibraryRoots.defaultAssetSubfolders)
+        set.formUnion(assetCatalog.folders)
+        return set.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    private func folderIcon(for name: String) -> String {
+        switch name {
+        case "images": return "photo"
+        case "videos": return "film"
+        case "audio":  return "waveform"
+        case "docs":   return "doc.text"
+        case "other":  return "shippingbox"
+        default:       return "folder"
+        }
+    }
+
+    @ViewBuilder
+    private func folderRow(label: String, icon: String, value: String?) -> some View {
+        let selected = folderFilter == value
+        let count = countForSidebar(folder: value)
+        Button {
+            folderFilter = value
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .frame(width: 16)
+                    .foregroundStyle(selected ? .white : .secondary)
+                Text(label)
+                    .lineLimit(1)
+                    .foregroundStyle(selected ? .white : .primary)
+                Spacer()
+                if count > 0 {
+                    Text("\(count)")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(selected ? Color.white.opacity(0.9) : Color.secondary)
+                }
+            }
+            .font(.system(size: 13))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(selected ? Color.accentColor : .clear)
+                    .padding(.horizontal, 6)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        // Each folder row is a drop target — dragging an asset cell here
+        // moves it into that subfolder. "All" is a filter, not a real
+        // destination, so it deliberately rejects drops.
+        .dropDestination(for: URL.self) { urls, _ in
+            guard value != nil else { return false }
+            moveAssets(urls: urls, to: value)
+            return true
+        }
+    }
+
+    private func countForSidebar(folder: String?) -> Int {
+        switch folder {
+        case .none: return assetCatalog.assets.count
+        case .some(let f): return assetCatalog.assets.filter { $0.folder == f }.count
+        }
     }
 
     // MARK: - Content
@@ -167,7 +309,12 @@ struct AssetLibraryView: View {
             LazyVGrid(columns: columns, spacing: 14) {
                 ForEach(filteredAssets) { asset in
                     AssetCell(asset: asset)
-                        .onTapGesture(count: 2) { previewAsset = asset }
+                        // Single-click opens preview — video cells
+                        // surface the trim editor, audio plays inline,
+                        // images get a full-size viewer. SwiftUI gives
+                        // drag-gesture priority when the user clicks +
+                        // drags, so cells stay draggable.
+                        .onTapGesture { previewAsset = asset }
                         .contextMenu {
                             Button("Preview") { previewAsset = asset }
                             Button("Reveal in Finder") { revealInFinder(asset) }
@@ -175,15 +322,25 @@ struct AssetLibraryView: View {
                             Button("Copy Markdown Embed") {
                                 copyEmbedMarkdown(asset)
                             }
+                            Menu("Move to") {
+                                ForEach(sidebarFolderList, id: \.self) { name in
+                                    Button(name) {
+                                        moveAssets(urls: [asset.url], to: name)
+                                    }
+                                }
+                                Divider()
+                                Button("Root (loose)") {
+                                    moveAssets(urls: [asset.url], to: "")
+                                }
+                            }
                             Divider()
                             Button("Move to Trash", role: .destructive) {
                                 deleteTarget = asset
                             }
                         }
-                        // URL is the simplest Transferable form. When the
-                        // drop lands on our editor's NSTextView (registered
-                        // for .fileURL), the Coordinator reads the file
-                        // URL and inserts the Markdown embed syntax.
+                        // URL is the simplest Transferable form. Works for
+                        // both the editor (inserts Markdown embed) and the
+                        // folder sidebar (moves the file between folders).
                         .draggable(asset.url) {
                             AssetCell(asset: asset)
                                 .frame(width: 160)
@@ -223,10 +380,10 @@ struct AssetLibraryView: View {
     // MARK: - Derived
 
     private var filteredAssets: [AssetCatalog.Asset] {
-        let byKind = assetCatalog.filtered(kind: kindFilter.mediaKind)
+        let base = assetCatalog.filtered(kind: kindFilter.mediaKind, folder: folderFilter)
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !q.isEmpty else { return byKind }
-        return byKind.filter { $0.title.lowercased().contains(q) }
+        guard !q.isEmpty else { return base }
+        return base.filter { $0.title.lowercased().contains(q) }
     }
 
     // MARK: - Actions
@@ -241,11 +398,15 @@ struct AssetLibraryView: View {
         var skipped: [String] = []
 
         for src in urls {
-            guard MediaKind.from(url: src) != nil else {
+            guard let kind = MediaKind.from(url: src) else {
                 skipped.append(src.lastPathComponent)
                 continue
             }
-            let dest = uniqueDestination(for: src.lastPathComponent, in: root)
+            // Route into kind-matching default subfolder, unless the user
+            // is currently viewing a specific folder — then land it there
+            // so "what I see after drop" matches intent.
+            let targetDir = resolveImportTarget(root: root, kind: kind)
+            let dest = uniqueDestination(for: src.lastPathComponent, in: targetDir)
             do {
                 try fm.copyItem(at: src, to: dest)
                 imported += 1
@@ -261,9 +422,94 @@ struct AssetLibraryView: View {
 
         Task {
             await assetCatalog.scan(root: libraryRoots.assetsRoot)
-            // Flag wake-up also refreshes the main sidebar, so Assets
-            // tray (if the user chooses to expose it later) stays in sync.
             await MainActor.run { appState.triggerRescanLibrary = true }
+        }
+    }
+
+    /// Pick the subfolder a new import lands in:
+    ///   - viewing a specific folder → that folder
+    ///   - otherwise → default kind bucket (images / videos / audio / other)
+    private func resolveImportTarget(root: URL, kind: MediaKind) -> URL {
+        if let selected = folderFilter, !selected.isEmpty {
+            let dir = root.appendingPathComponent(selected, isDirectory: true)
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            return dir
+        }
+        let bucket: String
+        switch kind {
+        case .image: bucket = "images"
+        case .video: bucket = "videos"
+        case .audio: bucket = "audio"
+        }
+        let dir = root.appendingPathComponent(bucket, isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    /// Move existing assets into a different folder. Triggered by dragging
+    /// an asset cell onto a folder row in the left sidebar.
+    private func moveAssets(urls: [URL], to folder: String?) {
+        guard let folder else { return }
+        guard let root = libraryRoots.assetsRoot else { return }
+        let fm = FileManager.default
+        let destDir: URL
+        if !folder.isEmpty {
+            destDir = root.appendingPathComponent(folder, isDirectory: true)
+            do {
+                try fm.createDirectory(at: destDir, withIntermediateDirectories: true)
+            } catch {
+                importError = "Move failed: \(error.localizedDescription)"
+                return
+            }
+        } else {
+            destDir = root
+        }
+
+        let destPath = destDir.standardizedFileURL.path
+        var moved = 0
+        for src in urls {
+            // Only move files that actually live under our assets root
+            // (dragging arbitrary URLs from Finder onto a folder row
+            // shouldn't relocate arbitrary files).
+            guard isAssetURL(src, under: root) else { continue }
+            let sourceDirPath = src.deletingLastPathComponent().standardizedFileURL.path
+            guard sourceDirPath != destPath else { continue }
+            let dest = uniqueDestination(for: src.lastPathComponent, in: destDir)
+            do {
+                try fm.moveItem(at: src, to: dest)
+                moved += 1
+            } catch {
+                importError = "Move failed: \(error.localizedDescription)"
+                return
+            }
+        }
+        if moved > 0 {
+            Task { await assetCatalog.scan(root: libraryRoots.assetsRoot) }
+        }
+    }
+
+    private func isAssetURL(_ url: URL, under root: URL) -> Bool {
+        let rootPath = root.standardizedFileURL.path
+        let path = url.standardizedFileURL.path
+        return path.hasPrefix(rootPath + "/")
+    }
+
+    private func commitNewFolder() {
+        let name = newFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
+        newFolderName = ""
+        guard !name.isEmpty else { return }
+        // Guard against path separators — keep new folders at the first
+        // level under the assets root.
+        let safe = name.replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+        guard let root = libraryRoots.ensureAssetsRoot() else { return }
+        let dir = root.appendingPathComponent(safe, isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            folderFilter = safe
+            Task { await assetCatalog.scan(root: libraryRoots.assetsRoot) }
+        } catch {
+            importError = "Create folder failed: \(error.localizedDescription)"
         }
     }
 
@@ -335,7 +581,8 @@ struct AssetLibraryView: View {
         }
 
         let stamp = Self.pasteTimestamp()
-        let dest = uniqueDestination(for: "pasted-\(stamp).png", in: root)
+        let targetDir = resolveImportTarget(root: root, kind: .image)
+        let dest = uniqueDestination(for: "pasted-\(stamp).png", in: targetDir)
         do {
             try png.write(to: dest, options: .atomic)
             Task {
@@ -472,9 +719,14 @@ private struct AssetThumbnail: View {
     }
 
     /// Generate a reasonably-sized preview image without blocking the main
-    /// thread. Images load via NSImage directly; videos grab a frame around
-    /// 0.5s in (skips black intro frames common in rendered exports);
-    /// audio falls back to the SF Symbol placeholder.
+    /// thread.
+    ///
+    /// - Images: `NSImage(contentsOf:)`.
+    /// - Videos: try multiple offsets (10% of duration, 5s, 2s, 0.5s) and
+    ///   keep the first non-black frame. YouTube music videos and trailers
+    ///   commonly open on a pure-black fade-in, so a single 0.5s sample
+    ///   produced all-black thumbnails.
+    /// - Audio: nil (placeholder icon).
     private static func thumbnail(for asset: AssetCatalog.Asset) async -> NSImage? {
         await Task.detached(priority: .userInitiated) { () -> NSImage? in
             switch asset.kind {
@@ -485,15 +737,58 @@ private struct AssetThumbnail: View {
                 let gen = AVAssetImageGenerator(asset: a)
                 gen.appliesPreferredTrackTransform = true
                 gen.maximumSize = CGSize(width: 600, height: 600)
-                let time = CMTime(seconds: 0.5, preferredTimescale: 600)
-                guard let cg = try? gen.copyCGImage(at: time, actualTime: nil) else {
-                    return nil
+                gen.requestedTimeToleranceBefore = .positiveInfinity
+                gen.requestedTimeToleranceAfter = .positiveInfinity
+
+                let durSec = CMTimeGetSeconds(a.duration)
+                var candidates: [Double] = [5, 2, 0.5]
+                if durSec.isFinite, durSec > 0 {
+                    candidates.insert(durSec * 0.1, at: 0)
                 }
-                return NSImage(cgImage: cg, size: .zero)
+
+                for sec in candidates {
+                    let time = CMTime(seconds: sec, preferredTimescale: 600)
+                    guard let cg = try? gen.copyCGImage(at: time, actualTime: nil) else {
+                        continue
+                    }
+                    if !isMostlyBlack(cg) {
+                        return NSImage(cgImage: cg, size: .zero)
+                    }
+                }
+                // All sampled frames were black (short clip, fully dark
+                // content, etc.) — return the last frame we got anyway so
+                // the cell at least shows something.
+                let fallback = CMTime(seconds: 1.0, preferredTimescale: 600)
+                if let cg = try? gen.copyCGImage(at: fallback, actualTime: nil) {
+                    return NSImage(cgImage: cg, size: .zero)
+                }
+                return nil
             case .audio:
                 return nil
             }
         }.value
+    }
+
+    /// Quick-and-dirty blackness check: downsample to 16×16 8-bit grayscale
+    /// and compute mean luminance. Anything under ~12/255 is treated as
+    /// black intro frame. Nonisolated so the detached Task above (which
+    /// runs off the main actor) can call it without warnings.
+    nonisolated private static func isMostlyBlack(_ image: CGImage) -> Bool {
+        let w = 16, h = 16
+        var bytes = [UInt8](repeating: 0, count: w * h)
+        let colorSpace = CGColorSpaceCreateDeviceGray()
+        guard let ctx = CGContext(
+            data: &bytes,
+            width: w, height: h,
+            bitsPerComponent: 8,
+            bytesPerRow: w,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.none.rawValue
+        ) else { return false }
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+        let total = bytes.reduce(0) { $0 + Int($1) }
+        let mean = Double(total) / Double(w * h)
+        return mean < 12.0
     }
 }
 

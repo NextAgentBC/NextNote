@@ -1,10 +1,15 @@
-.PHONY: gen build run clean sign help release release-signed notarize
+.PHONY: gen build build-fast build-release xcodebuild-app xcodebuild-debug run run-fast launch clean sign help release release-signed notarize
 
 # Build output lives in build.nosync/ — the .nosync suffix tells iCloud
 # Documents to skip the directory, preventing multi-GB .app bundles from
 # trying to sync up to CloudKit (which was erroring with "Quota exceeded"
 # and polluting Console with FileProvider errors).
 BUILD_DIR := build.nosync
+CONFIG ?= Debug
+SCHEME := nextNote
+APP_NAME := NextNote
+APP_BUNDLE := $(APP_NAME).app
+APP_PATH := $(BUILD_DIR)/Build/Products/$(CONFIG)/$(APP_BUNDLE)
 
 VERSION := $(shell awk '/MARKETING_VERSION/ {gsub(/"/,""); gsub(/,/,""); print $$NF}' project.yml | head -1)
 
@@ -21,7 +26,10 @@ help:
 	@echo "NextNote build targets:"
 	@echo "  make gen             — regenerate nextNote.xcodeproj via xcodegen"
 	@echo "  make build           — xcodebuild Debug (ad-hoc signed)"
-	@echo "  make run             — build + launch nextNote.app"
+	@echo "  make build-fast      — Debug build without regenerating xcodeproj"
+	@echo "  make build-release   — xcodebuild Release (ad-hoc signed)"
+	@echo "  make run             — build + launch NextNote.app"
+	@echo "  make run-fast        — build-fast + launch NextNote.app"
 	@echo "  make release         — ad-hoc signed dist/NextNote-<VER>.{zip,dmg}"
 	@echo "  make release-signed  — Developer-ID-signed + notarized + stapled dist/"
 	@echo "                         (needs SIGN_IDENTITY + NOTARY_PROFILE configured)"
@@ -34,32 +42,53 @@ gen:
 # with protected com.apple.fileprovider.fpfs#P xattrs that codesign rejects as
 # "resource fork, Finder information, or similar detritus"). We sign after.
 build: gen
-	xcodebuild \
-		-project nextNote.xcodeproj \
-		-scheme nextNote \
-		-configuration Debug \
-		-destination 'platform=macOS' \
-		-derivedDataPath $(BUILD_DIR) \
-		CODE_SIGNING_ALLOWED=NO \
-		CODE_SIGN_IDENTITY="" \
-		build | xcbeautify || xcodebuild \
-		-project nextNote.xcodeproj \
-		-scheme nextNote \
-		-configuration Debug \
-		-destination 'platform=macOS' \
-		-derivedDataPath $(BUILD_DIR) \
-		CODE_SIGNING_ALLOWED=NO \
-		CODE_SIGN_IDENTITY="" \
-		build
-	@$(MAKE) sign
+	@$(MAKE) xcodebuild-app CONFIG=Debug
+	@$(MAKE) sign CONFIG=Debug
+
+# Fast path for normal Swift/UI iteration. Use `make gen` or `make build`
+# after changing project.yml, package dependencies, entitlements, or resources.
+build-fast:
+	@$(MAKE) xcodebuild-app CONFIG=Debug
+	@$(MAKE) sign CONFIG=Debug
+
+build-release: gen
+	@$(MAKE) xcodebuild-app CONFIG=Release
+	@$(MAKE) sign CONFIG=Release
+
+xcodebuild-debug:
+	@$(MAKE) xcodebuild-app CONFIG=Debug
+
+xcodebuild-app:
+	@if command -v xcbeautify >/dev/null 2>&1; then \
+		set -o pipefail; \
+		xcodebuild \
+			-project nextNote.xcodeproj \
+			-scheme $(SCHEME) \
+			-configuration $(CONFIG) \
+			-destination 'platform=macOS' \
+			-derivedDataPath $(BUILD_DIR) \
+			CODE_SIGNING_ALLOWED=NO \
+			CODE_SIGN_IDENTITY="" \
+			build | xcbeautify; \
+	else \
+		xcodebuild \
+			-project nextNote.xcodeproj \
+			-scheme $(SCHEME) \
+			-configuration $(CONFIG) \
+			-destination 'platform=macOS' \
+			-derivedDataPath $(BUILD_DIR) \
+			CODE_SIGNING_ALLOWED=NO \
+			CODE_SIGN_IDENTITY="" \
+			build; \
+	fi
 
 # Strip xattrs (ditto --noextattr) then ad-hoc sign with the entitlements
 # xcodebuild generated. This survives iCloud re-tagging between rebuilds.
 sign:
-	@APP=$$(find $(BUILD_DIR) -name "nextNote.app" -type d | head -1); \
-	if [ -z "$$APP" ]; then echo "sign: nextNote.app not found"; exit 1; fi; \
-	ENT=$$(find $(BUILD_DIR) -name "nextNote.app.xcent" | head -1); \
-	TMP=$$(mktemp -d)/nextNote.app; \
+	@APP="$(APP_PATH)"; \
+	if [ ! -d "$$APP" ]; then echo "sign: $$APP not found"; exit 1; fi; \
+	ENT=$$(find $(BUILD_DIR) -name "$(APP_BUNDLE).xcent" | head -1); \
+	TMP=$$(mktemp -d)/$(APP_BUNDLE); \
 	ditto --norsrc --noextattr --noacl "$$APP" "$$TMP" && \
 	rm -rf "$$APP" && \
 	ditto --norsrc --noextattr --noacl "$$TMP" "$$APP" && \
@@ -71,10 +100,17 @@ sign:
 	fi
 
 run: build
-	@APP=$$(find $(BUILD_DIR) -name "nextNote.app" -type d | head -1); \
-	if [ -z "$$APP" ]; then echo "nextNote.app not found"; exit 1; fi; \
-	pkill -9 -f nextNote 2>/dev/null || true; \
-	open "$$APP"
+	@$(MAKE) launch
+
+run-fast: build-fast
+	@$(MAKE) launch
+
+launch:
+	@APP="$(APP_PATH)"; \
+	if [ ! -d "$$APP" ]; then echo "$$APP not found"; exit 1; fi; \
+	pkill -9 -x nextNote 2>/dev/null || true; \
+	pkill -9 -x "$(APP_NAME)" 2>/dev/null || true; \
+	open -n "$$APP"
 
 clean:
 	rm -rf nextNote.xcodeproj $(BUILD_DIR) dist
@@ -84,12 +120,12 @@ clean:
 # doesn't choke on iCloud's fileprovider tags.
 DMG_STAGING := $(BUILD_DIR)/dmg-staging
 
-release: build
+release: build-release
 	@echo "Packaging NextNote $(VERSION)…"
 	@rm -rf dist $(DMG_STAGING)
 	@mkdir -p dist $(DMG_STAGING)
-	@APP=$$(find $(BUILD_DIR) -name "nextNote.app" -type d | head -1); \
-	if [ -z "$$APP" ]; then echo "release: nextNote.app not found"; exit 1; fi; \
+	@APP="$(BUILD_DIR)/Build/Products/Release/$(APP_BUNDLE)"; \
+	if [ ! -d "$$APP" ]; then echo "release: $$APP not found"; exit 1; fi; \
 	cp -R "$$APP" "$(DMG_STAGING)/NextNote.app"; \
 	cp LICENSE "$(DMG_STAGING)/LICENSE.txt"; \
 	cp NOTICE "$(DMG_STAGING)/NOTICE.txt"; \
@@ -167,12 +203,12 @@ release: build
 # Result: dist/NextNote-<VER>.{zip,dmg} — double-click and run, zero warnings.
 # ────────────────────────────────────────────────────────────────────────────
 
-release-signed: build
+release-signed: build-release
 	@echo "▶ Signing NextNote $(VERSION) with: $(SIGN_IDENTITY)"
 	@rm -rf dist $(DMG_STAGING)
 	@mkdir -p dist $(DMG_STAGING)
-	@APP=$$(find $(BUILD_DIR) -name "nextNote.app" -type d | head -1); \
-	if [ -z "$$APP" ]; then echo "release-signed: nextNote.app not found"; exit 1; fi; \
+	@APP="$(BUILD_DIR)/Build/Products/Release/$(APP_BUNDLE)"; \
+	if [ ! -d "$$APP" ]; then echo "release-signed: $$APP not found"; exit 1; fi; \
 	STAGED="$(DMG_STAGING)/NextNote.app"; \
 	cp -R "$$APP" "$$STAGED"; \
 	echo "  → deep codesign with hardened runtime + timestamp"; \

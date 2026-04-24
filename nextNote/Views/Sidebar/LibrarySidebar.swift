@@ -173,20 +173,33 @@ struct LibrarySidebar: View {
         }
     }
 
-    /// Copy dropped files into the Assets root. Accepts drops from both
-    /// Finder and the Media sidebar rows (which drag a file:// URL).
-    /// Unsupported kinds (non-image/video/audio) are ignored silently —
-    /// the drop still returns true so SwiftUI doesn't animate the badge
-    /// back to its origin.
+    /// Copy dropped files into the Assets root, auto-routed by kind into
+    /// the default subfolders (images/videos/audio). Accepts drops from
+    /// Finder and from the Media sidebar rows.
     private func importToAssets(_ urls: [URL]) -> Bool {
         guard let root = libraryRoots.ensureAssetsRoot() else { return false }
-        let media = urls.filter { MediaKind.from(url: $0) != nil }
-        guard !media.isEmpty else { return false }
         let fm = FileManager.default
-        for src in media {
-            let dest = uniqueAssetsDestination(for: src.lastPathComponent, in: root)
-            try? fm.copyItem(at: src, to: dest)
+        var imported = 0
+        for src in urls {
+            guard let kind = MediaKind.from(url: src) else { continue }
+            let bucket: String
+            switch kind {
+            case .image: bucket = "images"
+            case .video: bucket = "videos"
+            case .audio: bucket = "audio"
+            }
+            let dir = root.appendingPathComponent(bucket, isDirectory: true)
+            try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            let dest = uniqueAssetsDestination(for: src.lastPathComponent, in: dir)
+            do {
+                try fm.copyItem(at: src, to: dest)
+                imported += 1
+            } catch {
+                // Silent — drop UI doesn't have error surface. Skipped
+                // files just won't appear.
+            }
         }
+        guard imported > 0 else { return false }
         Task { await assetCatalog.scan(root: libraryRoots.assetsRoot) }
         return true
     }

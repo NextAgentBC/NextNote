@@ -393,7 +393,9 @@ struct MacTextEditorView: NSViewRepresentable {
             attributed.addAttribute(.paragraphStyle, value: para,
                                     range: NSRange(location: 0, length: attributed.length))
 
-            textView.textStorage?.setAttributedString(attributed)
+            withoutUndoRegistration(for: textView) {
+                textView.textStorage?.setAttributedString(attributed)
+            }
             textView.typingAttributes = [
                 .font: font,
                 .foregroundColor: NSColor.textColor,
@@ -413,6 +415,20 @@ struct MacTextEditorView: NSViewRepresentable {
             let newCursorPos = selectedRange.location + snippet.cursorOffset
             let clamped = min(max(newCursorPos, 0), textView.string.count)
             textView.setSelectedRange(NSRange(location: clamped, length: 0))
+        }
+
+        private func withoutUndoRegistration(for textView: NSTextView, _ work: () -> Void) {
+            let undoManager = textView.undoManager
+            let shouldRestore = undoManager?.isUndoRegistrationEnabled == true
+            if shouldRestore {
+                undoManager?.disableUndoRegistration()
+            }
+            defer {
+                if shouldRestore {
+                    undoManager?.enableUndoRegistration()
+                }
+            }
+            work()
         }
 
         // MARK: - Drag & Drop
@@ -476,7 +492,9 @@ struct MacTextEditorView: NSViewRepresentable {
                 let para = makeParagraphStyle(lineSpacing: parent.lineSpacing)
                 attributed.addAttribute(.paragraphStyle, value: para,
                                         range: NSRange(location: 0, length: attributed.length))
-                textView.textStorage?.setAttributedString(attributed)
+                withoutUndoRegistration(for: textView) {
+                    textView.textStorage?.setAttributedString(attributed)
+                }
                 textView.selectedRanges = selectedRanges
             }
         }

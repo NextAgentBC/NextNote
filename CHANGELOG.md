@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.1.3 — 2026-04-24
+
+### Asset Library — folders, categories, UX pass
+
+- **Default category folders** (`images / videos / audio / docs / other`). The Assets root is auto-populated with these subfolders the first time it's opened; the Asset Library left pane always lists the five built-ins even when empty, so new users see the layout up front.
+- **Custom folders.** "New Folder" button in the Asset Library creates an arbitrary subfolder alongside the built-ins. Folder name is path-sanitized (`/` and `:` stripped).
+- **Folder sidebar** (left pane of the Asset Library sheet). "All" + "Loose" + one row per first-level subfolder, each with its own count badge. Clicking filters the grid. Dragging an asset cell onto a folder row **moves** the file into that folder.
+- **Auto-routing on import.** Finder drops, YouTube "Save to Assets", clipboard paste, and sidebar-tray drops now land in the kind-matching subfolder instead of the root — so an image pastes into `images/`, a YouTube video lands in `videos/`, etc. Importing while a specific folder is selected drops into that folder instead.
+- **Single-click preview.** Clicking a cell opens the preview sheet directly (videos get the existing Trim editor). Previously required a double-click. Drag still works — SwiftUI gives drag-gesture priority.
+- **Right-click "Move to…"** on asset cells, populated from the full folder list.
+
+### Sidebar toolbar
+
+- **New Note + New Folder merged into a single "+" menu** so neither action hides in the SwiftUI overflow chevron on narrow window widths.
+
+### Asset Library thumbnails
+
+- **Non-black video frames.** `AVAssetImageGenerator` used to sample only at 0.5 s, which often returned a pure-black fade-in frame for YouTube music videos and trailers. The generator now tries 10 % of duration / 5 s / 2 s / 0.5 s, downsamples each candidate to 16×16 grayscale, and keeps the first non-black frame. Falls back to whatever it got if everything is dark.
+
+### YouTube download UX
+
+- **"Save to Media / Assets" segmented picker.** Pointing a download at Assets routes it into `videos/` or `audio/` under the Assets root, skipping the AI artist classifier.
+- **Auto-adopt `yt-dlp` / `ffmpeg`** when they're installed at their standard Homebrew paths. The sheet now shows a green checkmark + path when a tool is present, and a copyable `brew install …` hint otherwise. The forced `Choose…` click every fresh install is gone. (Sandbox is now off; see note below.)
+
+### App-wide
+
+- **Sandbox disabled.** nextNote now runs outside the macOS App Sandbox so it can spawn user-installed CLI tools (yt-dlp, ffmpeg, ollama) from fixed Homebrew paths without making the user re-grant every binary via NSOpenPanel on each fresh install. Hardened runtime + notarization still apply; the app still ships signed + notarized in the released DMG.
+- **Asset Library header two-row layout** — title + actions on top, filter + search below — so the sheet stays usable at its 860×560 minimum size.
+- **Clipboard paste (⌘V) in the Asset Library** saves the clipboard image (screenshots, Preview copy, browser "Copy Image") as `pasted-YYYY-MM-DD-HHMMSS.png` in `images/`.
+- **Drag Media sidebar rows → Assets tray** to copy a music/video file into the Asset Library's matching subfolder. The Media row context menu gains "Add to Assets" as a click-only alternative.
+
 ## 0.1.2 — 2026-04-24
 
 ### Features

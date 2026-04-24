@@ -2,9 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- User-visible app name. PRODUCT_NAME stays "nextNote" so the bundle
-	     path + legacy defaults keys stay stable; the display name drives
-	     menu bar, dock, and the about box instead. -->
+	<!-- User-visible app name. Keep this aligned with PRODUCT_NAME in project.yml
+	     so Finder, Dock, and locally built bundles all appear as NextNote. -->
 	<key>CFBundleDisplayName</key>
 	<string>NextNote</string>
 	<key>CFBundleName</key>
