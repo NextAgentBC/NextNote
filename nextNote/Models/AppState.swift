@@ -18,6 +18,7 @@ final class AppState: ObservableObject {
     @Published var previewMode: PreviewMode = .editor
     @Published var showMediaLibrary: Bool = false
     @Published var showYouTubeDownload: Bool = false
+    @Published var showAssetLibrary: Bool = false
     /// Active book — derived from the active tab's `bookID`. Kept as a
     /// convenience @Published so non-tab surfaces (sidebar highlights) don't
     /// have to poke into openTabs.

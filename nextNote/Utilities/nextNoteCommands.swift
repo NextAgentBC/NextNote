@@ -147,6 +147,11 @@ struct NextNoteCommands: Commands {
             }
             .keyboardShortcut("m", modifiers: [.command, .shift])
 
+            Button("Asset Library") {
+                appState.showAssetLibrary.toggle()
+            }
+            .keyboardShortcut("a", modifiers: [.command, .shift])
+
             // Cmd+Shift+V is "Paste and Match Style" in macOS text fields — skip
             // the shortcut here to avoid stealing it inside the editor.
             Button("Toggle Video Vibe Window") {

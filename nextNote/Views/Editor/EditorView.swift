@@ -356,7 +356,11 @@ struct MacTextEditorView: NSViewRepresentable {
         var lastWrapLines: Bool   = true
         var isUpdating: Bool      = false
 
-        private let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "tiff", "heic"]
+        /// Legacy image-only set — kept for reference but drop logic now
+        /// accepts any `MediaKind` (image + video + audio) so the Asset
+        /// Library, Finder, and YouTube-download flows all converge on the
+        /// same embed syntax.
+        private let imageExtensions: Set<String> = MediaKind.imageExts
 
         init(_ parent: MacTextEditorView) {
             self.parent = parent
@@ -414,7 +418,7 @@ struct MacTextEditorView: NSViewRepresentable {
         // MARK: - Drag & Drop
 
         func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
-            hasImageFiles(in: sender) ? .copy : []
+            hasMediaFiles(in: sender) ? .copy : []
         }
 
         func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
@@ -424,30 +428,36 @@ struct MacTextEditorView: NSViewRepresentable {
                       options: [.urlReadingFileURLsOnly: true]
                   ) as? [URL] else { return false }
 
-            let imageURLs = urls.filter { imageExtensions.contains($0.pathExtension.lowercased()) }
-            guard !imageURLs.isEmpty else { return false }
+            // Accept anything MediaKind knows about. Preview renderer
+            // chooses <img> / <video> / <audio> by extension, so the same
+            // `![](path)` syntax works for every dropped kind.
+            let mediaURLs = urls.filter { MediaKind.from(url: $0) != nil }
+            guard !mediaURLs.isEmpty else { return false }
 
-            let markdownImages = imageURLs.map { "![image](\($0.path))" }.joined(separator: "\n")
+            let lines = mediaURLs.map { url -> String in
+                let alt = url.deletingPathExtension().lastPathComponent
+                return "![\(alt)](\(url.path))"
+            }
+            let snippet = "\n" + lines.joined(separator: "\n") + "\n"
             let dropPoint = textView.convert(sender.draggingLocation, from: nil)
             let charIndex = textView.characterIndexForInsertion(at: dropPoint)
-            let insertText = "\n\(markdownImages)\n"
 
             if charIndex <= textView.string.count {
                 let idx = textView.string.index(textView.string.startIndex, offsetBy: charIndex)
                 var newText = textView.string
-                newText.insert(contentsOf: insertText, at: idx)
+                newText.insert(contentsOf: snippet, at: idx)
                 parent.text = newText
                 parent.onTextChange?()
             }
             return true
         }
 
-        private func hasImageFiles(in info: NSDraggingInfo) -> Bool {
+        private func hasMediaFiles(in info: NSDraggingInfo) -> Bool {
             guard let urls = info.draggingPasteboard.readObjects(
                 forClasses: [NSURL.self],
                 options: [.urlReadingFileURLsOnly: true]
             ) as? [URL] else { return false }
-            return urls.contains { imageExtensions.contains($0.pathExtension.lowercased()) }
+            return urls.contains { MediaKind.from(url: $0) != nil }
         }
 
         // MARK: - NSTextViewDelegate

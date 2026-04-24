@@ -127,6 +127,14 @@ struct ContentView: View {
         .sheet(isPresented: $appState.showYouTubeDownload) {
             YouTubeDownloadView()
         }
+        // Asset Library sheet — grid browser for the fourth library root
+        // (images / video / audio). Cells are draggable onto the markdown
+        // editor, which turns the drop into `![](…)` syntax.
+        .sheet(isPresented: $appState.showAssetLibrary) {
+            AssetLibraryView()
+                .environmentObject(appState)
+                .environmentObject(libraryRoots)
+        }
         // File importer: supports both toolbar button and macOS menu (via appState.showFileImporter)
         .fileImporter(
             isPresented: $appState.showFileImporter,

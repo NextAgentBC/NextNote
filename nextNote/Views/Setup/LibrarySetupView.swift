@@ -19,7 +19,7 @@ struct LibrarySetupView: View {
         VStack(spacing: 22) {
             header
             VStack(spacing: 12) {
-                ForEach(LibraryRoots.Kind.allCases) { kind in
+                ForEach(LibraryRoots.requiredKinds) { kind in
                     row(for: kind)
                 }
             }
@@ -111,14 +111,14 @@ struct LibrarySetupView: View {
     }
 
     private func useDefaultsForAll() {
-        for kind in LibraryRoots.Kind.allCases {
+        for kind in LibraryRoots.requiredKinds {
             _ = libraryRoots.useDefault(kind: kind)
         }
     }
 
     private func start() {
         let fm = FileManager.default
-        for kind in LibraryRoots.Kind.allCases {
+        for kind in LibraryRoots.requiredKinds {
             if libraryRoots.url(for: kind) != nil { continue }
             let target = pendingPicks[kind] ?? libraryRoots.defaultURL(for: kind)
             do {

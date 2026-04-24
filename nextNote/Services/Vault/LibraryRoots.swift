@@ -8,13 +8,18 @@ import AppKit
 final class LibraryRoots: ObservableObject {
 
     enum Kind: String, CaseIterable, Identifiable {
-        case notes, media, ebooks
+        /// Notes / Media / Ebooks are the three roots required on first-run;
+        /// Assets is optional and can be adopted on demand (first time the
+        /// user opens the Asset Library it auto-picks the default path if
+        /// unset, so existing installs upgrade smoothly without a re-setup).
+        case notes, media, ebooks, assets
         var id: String { rawValue }
         var displayName: String {
             switch self {
             case .notes:  return "Notes"
             case .media:  return "Media"
             case .ebooks: return "Ebooks"
+            case .assets: return "Assets"
             }
         }
         var icon: String {
@@ -22,6 +27,7 @@ final class LibraryRoots: ObservableObject {
             case .notes:  return "note.text"
             case .media:  return "music.note"
             case .ebooks: return "books.vertical"
+            case .assets: return "photo.stack"
             }
         }
         var defaultSubdir: String { displayName }
@@ -30,14 +36,20 @@ final class LibraryRoots: ObservableObject {
         }
     }
 
+    /// Roots that must be set for the app to consider itself configured —
+    /// Assets is excluded so upgrades from 0.1.x don't force a re-setup.
+    /// Also the list that `LibrarySetupView` iterates on first launch.
+    static let requiredKinds: [Kind] = [.notes, .media, .ebooks]
+
     @Published private(set) var notesRoot: URL?
     @Published private(set) var mediaRoot: URL?
     @Published private(set) var ebooksRoot: URL?
+    @Published private(set) var assetsRoot: URL?
 
     private var access: [Kind: URL] = [:]
 
     var isConfigured: Bool {
-        notesRoot != nil && mediaRoot != nil && ebooksRoot != nil
+        Self.requiredKinds.allSatisfy { url(for: $0) != nil }
     }
 
     /// Canonical parent for default roots. Created on demand.
@@ -57,7 +69,18 @@ final class LibraryRoots: ObservableObject {
         case .notes:  return notesRoot
         case .media:  return mediaRoot
         case .ebooks: return ebooksRoot
+        case .assets: return assetsRoot
         }
+    }
+
+    /// Return the Assets root, adopting the default path (`~/Documents/nextNote/Assets/`)
+    /// on first access. Called lazily when the user opens the Asset Library —
+    /// existing 0.1.x installs don't get a setup prompt because this fires
+    /// only on demand.
+    @discardableResult
+    func ensureAssetsRoot() -> URL? {
+        if let existing = assetsRoot { return existing }
+        return useDefault(kind: .assets)
     }
 
     init() {
@@ -161,6 +184,7 @@ final class LibraryRoots: ObservableObject {
         case .notes:  notesRoot = url
         case .media:  mediaRoot = url
         case .ebooks: ebooksRoot = url
+        case .assets: assetsRoot = url
         }
     }
 

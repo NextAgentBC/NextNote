@@ -56,6 +56,7 @@ final class MediaCatalog: ObservableObject {
             switch kind {
             case .audio: musicBucket.append(entry)
             case .video: videoBucket.append(entry)
+            case .image: continue  // images belong to the Asset Library, not the Media sidebar
             }
         }
 

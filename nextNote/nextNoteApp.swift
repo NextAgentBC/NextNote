@@ -7,6 +7,7 @@ struct NextNoteApp: App {
     @StateObject private var vaultStore = VaultStore()
     @StateObject private var libraryRoots = LibraryRoots()
     @StateObject private var mediaCatalog = MediaCatalog()
+    @StateObject private var assetCatalog = AssetCatalog()
 
     var sharedModelContainer: ModelContainer = {
         let schema = Schema(versionedSchema: NextNoteSchemaV3.self)
@@ -26,6 +27,7 @@ struct NextNoteApp: App {
                 .environmentObject(vaultStore)
                 .environmentObject(libraryRoots)
                 .environmentObject(mediaCatalog)
+                .environmentObject(assetCatalog)
                 .frame(minWidth: 700, minHeight: 500)
         }
         .modelContainer(sharedModelContainer)
@@ -39,6 +41,7 @@ struct NextNoteApp: App {
                 .environmentObject(vaultStore)
                 .environmentObject(libraryRoots)
                 .environmentObject(mediaCatalog)
+                .environmentObject(assetCatalog)
         }
         #else
         WindowGroup {
@@ -47,6 +50,7 @@ struct NextNoteApp: App {
                 .environmentObject(vaultStore)
                 .environmentObject(libraryRoots)
                 .environmentObject(mediaCatalog)
+                .environmentObject(assetCatalog)
         }
         .modelContainer(sharedModelContainer)
         #endif
