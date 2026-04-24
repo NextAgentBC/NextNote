@@ -85,22 +85,45 @@ release: build
 	{ \
 	  echo "NextNote $(VERSION)"; \
 	  echo ""; \
-	  echo "1. Drag NextNote.app into /Applications."; \
-	  echo "2. First launch: right-click the app icon → Open."; \
-	  echo "   macOS Gatekeeper asks once — click Open."; \
-	  echo "   (Ad-hoc signed; this confirmation is only needed once.)"; \
+	  echo "════════════════════════════════════════════════════════════"; \
+	  echo "INSTALL"; \
+	  echo "════════════════════════════════════════════════════════════"; \
 	  echo ""; \
-	  echo "3. The Welcome screen lets you pick folders for Notes / Media / Ebooks,"; \
+	  echo "1. Drag NextNote.app into /Applications."; \
+	  echo ""; \
+	  echo "2. FIRST LAUNCH — Gatekeeper will block the app because it's"; \
+	  echo "   ad-hoc signed (no paid Apple Developer ID). Fix it ONCE:"; \
+	  echo ""; \
+	  echo "   Easiest — paste this in Terminal (Applications → Utilities):"; \
+	  echo ""; \
+	  echo "     xattr -dr com.apple.quarantine /Applications/NextNote.app"; \
+	  echo ""; \
+	  echo "   Then double-click NextNote. Done."; \
+	  echo ""; \
+	  echo "   GUI alternative:"; \
+	  echo "     a) Double-click NextNote → dialog says \"cannot be opened\""; \
+	  echo "     b) Open System Settings → Privacy & Security"; \
+	  echo "     c) Scroll down — see \"NextNote was blocked…\" → Open Anyway"; \
+	  echo "     d) Enter your password, then click Open in the next dialog"; \
+	  echo ""; \
+	  echo "   The app is open source, not malware — the warning is Apple's"; \
+	  echo "   default for any app not signed with a \$$99/year Developer ID."; \
+	  echo ""; \
+	  echo "3. Welcome screen lets you pick folders for Notes / Media / Ebooks,"; \
 	  echo "   or click \"Use Defaults for All\" to auto-create them under"; \
 	  echo "   ~/Documents/nextNote/."; \
 	  echo ""; \
-	  echo "Optional tools:"; \
+	  echo "════════════════════════════════════════════════════════════"; \
+	  echo "OPTIONAL TOOLS"; \
+	  echo "════════════════════════════════════════════════════════════"; \
+	  echo ""; \
 	  echo "  brew install yt-dlp ffmpeg      # YouTube downloads"; \
 	  echo "  brew install ollama             # local LLM provider"; \
 	  echo ""; \
-	  echo "Docs: https://github.com/NextAgentBC/NextNote"; \
+	  echo "════════════════════════════════════════════════════════════"; \
 	  echo ""; \
-	  echo "Licensed under Apache 2.0. See LICENSE.txt + NOTICE.txt."; \
+	  echo "Docs:    https://github.com/NextAgentBC/NextNote"; \
+	  echo "License: Apache 2.0 (see LICENSE.txt + NOTICE.txt)"; \
 	} > "$(DMG_STAGING)/README.txt"; \
 	ln -s /Applications "$(DMG_STAGING)/Applications"; \
 	ditto --norsrc --noextattr --noacl -c -k --keepParent "$(DMG_STAGING)/NextNote.app" "dist/NextNote-$(VERSION).zip"; \
