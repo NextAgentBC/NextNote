@@ -36,10 +36,14 @@ extension VaultTreeView {
         ToolbarItem(placement: .automatic) {
             Button {
                 Task { await vault.scan() }
+                // Also kick the media + ebook libraries — user clicking
+                // the sidebar refresh button after a Tidy / Finder move
+                // expects everything to update, not just notes.
+                appState.triggerRescanLibrary = true
             } label: {
                 Image(systemName: "arrow.clockwise")
             }
-            .help("Rescan vault")
+            .help("Rescan vault + media + ebooks")
             .disabled(vault.isScanning || vault.root == nil)
         }
     }

@@ -13,6 +13,19 @@ extension LibrarySidebar {
                 count: totalMedia,
                 expanded: $mediaExpanded
             )
+            .contextMenu {
+                Button("Rescan Media Folder") {
+                    Task { await mediaLibrary.scanRoot(libraryRoots.mediaRoot) }
+                }
+            }
+            // Re-scan whenever the user re-expands the tray — covers the
+            // common "I just moved files in Finder / via Tidy with Claude,
+            // why doesn't it show" case without polling.
+            .onChange(of: mediaExpanded) { _, isOpen in
+                if isOpen {
+                    Task { await mediaLibrary.scanRoot(libraryRoots.mediaRoot) }
+                }
+            }
             if mediaExpanded {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
