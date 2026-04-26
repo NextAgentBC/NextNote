@@ -1,7 +1,11 @@
 import SwiftUI
 import Combine
 
+@MainActor
 final class AppState: ObservableObject {
+    // MARK: - AI
+    let aiService: AIService = AIService()
+
     // MARK: - Tab Management
     @Published var openTabs: [TabItem] = []
     @Published var activeTabId: UUID?
