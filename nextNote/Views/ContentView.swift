@@ -195,15 +195,22 @@ struct ContentView: View {
         }
         .toolbar { macToolbar }
         .overlay(alignment: .bottomTrailing) {
+            FloatingChatBall()
+                .environmentObject(appState)
+                .padding(.trailing, 20)
+                .padding(.bottom, 20)
+        }
+        .overlay(alignment: .bottomTrailing) {
             if appState.showShortcuts {
                 ShortcutCheatsheet()
                     .environmentObject(appState)
-                    .padding(.trailing, 20)
+                    .padding(.trailing, 80)
                     .padding(.bottom, 60)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
         .animation(.easeOut(duration: 0.15), value: appState.showShortcuts)
+        .animation(.easeOut(duration: 0.2), value: appState.showChatBall)
         #else
         NavigationStack {
             editorArea

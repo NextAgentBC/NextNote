@@ -32,6 +32,8 @@ final class AppState: ObservableObject {
     @Published var pendingTerminalCommand: String? = nil
     /// Shortcut cheatsheet overlay — ⌘/ toggles.
     @Published var showShortcuts: Bool = false
+    /// Floating AI chat ball — ⌘⇧K toggles.
+    @Published var showChatBall: Bool = false
     /// Active book — derived from the active tab's `bookID`. Kept as a
     /// convenience @Published so non-tab surfaces (sidebar highlights) don't
     /// have to poke into openTabs.

@@ -63,6 +63,13 @@ struct NextNoteCommands: Commands {
                 appState.showShortcuts.toggle()
             }
             .keyboardShortcut("/", modifiers: .command)
+
+            Divider()
+
+            Button(appState.showChatBall ? "Hide AI Chat" : "Show AI Chat") {
+                appState.showChatBall.toggle()
+            }
+            .keyboardShortcut("k", modifiers: [.command, .shift])
         }
 
         // Merge into the system View menu (NavigationSplitView already adds
