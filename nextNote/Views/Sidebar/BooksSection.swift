@@ -1,5 +1,9 @@
 import SwiftUI
 import SwiftData
+import UniformTypeIdentifiers
+#if os(macOS)
+import AppKit
+#endif
 
 /// Books section — rendered inside LibrarySidebar's Ebooks tray. Lists
 /// imported books grouped by their first-level subfolder under the
@@ -262,6 +266,7 @@ struct BooksSection: View {
         .contextMenu {
             Button("Reveal in Finder") { revealInFinder(book) }
             Button("Refresh Table of Contents") { refreshTOC(book) }
+            Button("Locate File…") { locateFile(for: book) }
             Divider()
             Menu("Move to") {
                 Button("Root (loose)") { moveBook(book, toFolder: "") }
@@ -390,8 +395,54 @@ struct BooksSection: View {
             )
             refreshDiskFolders()
         } catch {
-            folderError = error.localizedDescription
+            // Auto-recovery: maybe Book.relativePath is just stale.
+            // Run reconcile then retry once.
+            let fixed = EbookLibraryActions.reconcile(
+                books: books,
+                under: root,
+                vault: vaultEnv,
+                modelContext: modelContext
+            )
+            if fixed > 0 {
+                do {
+                    try EbookLibraryActions.moveBook(
+                        book,
+                        toFolder: folder,
+                        root: root,
+                        vault: vaultEnv,
+                        modelContext: modelContext
+                    )
+                    refreshDiskFolders()
+                    return
+                } catch {
+                    folderError = error.localizedDescription + "\n\nIf the file is somewhere unexpected, right-click the book → Locate File… to point nextNote at it."
+                    return
+                }
+            }
+            folderError = error.localizedDescription + "\n\nIf the file is somewhere unexpected, right-click the book → Locate File… to point nextNote at it."
         }
+    }
+
+    /// Open a file picker so the user can manually relink a Book record
+    /// to its actual on-disk file. Useful when reconcile can't auto-find
+    /// it (filename was changed, file lives outside ebooksRoot, etc).
+    private func locateFile(for book: Book) {
+        #if os(macOS)
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        var allowed: [UTType] = [.pdf]
+        if let epubType = UTType(filenameExtension: "epub") { allowed.append(epubType) }
+        panel.allowedContentTypes = allowed
+        panel.message = "Pick the actual file for \"\(book.title)\"."
+        panel.prompt = "Relink"
+        panel.runModal()
+        guard let url = panel.url else { return }
+        book.relativePath = vaultEnv.relativePath(for: url) ?? url.path
+        try? modelContext.save()
+        refreshDiskFolders()
+        #endif
     }
 
     /// Folder names from disk + folders inferred from book paths. Used in
