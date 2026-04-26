@@ -134,11 +134,30 @@ enum EbookLibraryActions {
 
         let dest = dir.appendingPathComponent(oldURL.lastPathComponent)
         if dest.standardizedFileURL.path == oldURL.standardizedFileURL.path { return }
-        if FileManager.default.fileExists(atPath: dest.path) {
+
+        let fm = FileManager.default
+        let destExists = fm.fileExists(atPath: dest.path)
+        let oldExists = fm.fileExists(atPath: oldURL.path)
+
+        if destExists && !oldExists {
+            // File already moved out-of-band (Finder drag, previous run
+            // crashed mid-move, or stale Book.relativePath). Just sync
+            // the model — no FS work needed.
+            book.relativePath = vault.relativePath(for: dest) ?? dest.lastPathComponent
+            try? modelContext.save()
+            return
+        }
+        if destExists && oldExists {
             throw ActionError.fs("A file with the same name already exists in \"\(cleanFolder.isEmpty ? "Ebooks root" : cleanFolder)\".")
         }
+        guard oldExists else {
+            // Neither location has the file — Book entry is orphaned. Bail
+            // without touching anything; let the user re-import or remove
+            // the book record.
+            throw ActionError.fs("Couldn't find the book file on disk. It may have been moved or deleted in Finder.")
+        }
         do {
-            try FileManager.default.moveItem(at: oldURL, to: dest)
+            try fm.moveItem(at: oldURL, to: dest)
         } catch {
             throw ActionError.fs("Move failed: \(error.localizedDescription)")
         }
