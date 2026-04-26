@@ -51,6 +51,7 @@ extension MediaLibrary {
     func generatePlaylistsFromFolders(
         root: URL,
         useAI: Bool = true,
+        ai: AIService? = nil,
         excludes: Set<String> = PlaylistSynth.defaultExcludes,
         onStatus: @MainActor @escaping (String) -> Void = { _ in }
     ) async -> (created: Int, updated: Int) {
@@ -85,7 +86,8 @@ extension MediaLibrary {
                 }
                 finalName = await PlaylistSynth.suggestName(
                     folderName: candidate.folderName,
-                    sampleTitles: Array(samples)
+                    sampleTitles: Array(samples),
+                    ai: ai
                 )
             } else {
                 finalName = candidate.folderName

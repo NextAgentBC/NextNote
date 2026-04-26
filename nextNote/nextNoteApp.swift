@@ -9,7 +9,7 @@ struct NextNoteApp: App {
     @StateObject private var assetCatalog = AssetCatalog()
 
     var sharedModelContainer: ModelContainer = {
-        let schema = Schema(versionedSchema: NextNoteSchemaV5.self)
+        let schema = Schema(versionedSchema: NextNoteSchemaV6.self)
         let config = ModelConfiguration(isStoredInMemoryOnly: false)
         do {
             return try ModelContainer(for: schema, configurations: [config])

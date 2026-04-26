@@ -48,3 +48,13 @@ enum NextNoteSchemaV5: VersionedSchema {
         [TextDocument.self, Note.self, Book.self, BookHighlight.self, DownloadJob.self]
     }
 }
+
+// V6: Book gains `aiSuggestionData` (optional Data, nil by default) and
+// `suggestedFolder` (optional String). Both optional so V5 records decode
+// without a heavyweight migration.
+enum NextNoteSchemaV6: VersionedSchema {
+    static let versionIdentifier = Schema.Version(6, 0, 0)
+    static var models: [any PersistentModel.Type] {
+        [TextDocument.self, Note.self, Book.self, BookHighlight.self, DownloadJob.self]
+    }
+}

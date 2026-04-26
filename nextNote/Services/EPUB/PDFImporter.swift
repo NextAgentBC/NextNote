@@ -13,10 +13,12 @@ import PDFKit
 final class PDFImporter {
     private let vault: VaultStore
     private let context: ModelContext
+    private let aiService: AIService?
 
-    init(vault: VaultStore, context: ModelContext) {
+    init(vault: VaultStore, context: ModelContext, aiService: AIService? = nil) {
         self.vault = vault
         self.context = context
+        self.aiService = aiService
     }
 
     enum ImportError: LocalizedError {
@@ -78,6 +80,29 @@ final class PDFImporter {
         )
         context.insert(book)
         try context.save()
+
+        if BookMetadataAI.titleLooksJunk(book.title), let ai = aiService {
+            #if os(macOS)
+            var firstPageText: String? = nil
+            if let pdfDoc = PDFDocument(url: pdfURL) {
+                firstPageText = (0..<min(3, pdfDoc.pageCount)).compactMap {
+                    pdfDoc.page(at: $0)?.string
+                }.joined(separator: "\n")
+            }
+            #else
+            let firstPageText: String? = nil
+            #endif
+            let capturedBook = book
+            let capturedText = firstPageText
+            Task { @MainActor in
+                let suggestion = try? await BookMetadataAI.suggest(
+                    book: capturedBook, chapterText: capturedText, ai: ai)
+                guard let suggestion, suggestion.title != nil || suggestion.author != nil else { return }
+                capturedBook.aiSuggestion = suggestion
+                try? capturedBook.modelContext?.save()
+            }
+        }
+
         return book
     }
 

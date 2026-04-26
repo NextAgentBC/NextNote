@@ -24,10 +24,12 @@ final class EPUBImporter {
 
     private let vault: VaultStore
     private let context: ModelContext
+    let aiService: AIService?
 
-    init(vault: VaultStore, context: ModelContext) {
+    init(vault: VaultStore, context: ModelContext, aiService: AIService? = nil) {
         self.vault = vault
         self.context = context
+        self.aiService = aiService
     }
 
     // MARK: - Caches dir
@@ -180,6 +182,20 @@ final class EPUBImporter {
         try context.save()
 
         await vault.scan()
+
+        if BookMetadataAI.titleLooksJunk(book.title), let ai = aiService {
+            let capturedBook = book
+            let capturedVault = vault
+            Task { @MainActor in
+                let chapterText = await Self.firstChapterText(book: capturedBook, vault: capturedVault)
+                let suggestion = try? await BookMetadataAI.suggest(
+                    book: capturedBook, chapterText: chapterText, ai: ai)
+                guard let suggestion, suggestion.title != nil || suggestion.author != nil else { return }
+                capturedBook.aiSuggestion = suggestion
+                try? capturedBook.modelContext?.save()
+            }
+        }
+
         return book
     }
 
@@ -290,6 +306,26 @@ final class EPUBImporter {
         context.insert(book)
         try context.save()
         return book
+    }
+
+    // MARK: - AI helpers
+
+    static func firstChapterText(book: Book, vault: VaultStore) async -> String? {
+        guard let root = try? ensureUnzipped(book, vault: vault) else { return nil }
+        let spine: [BookSpineEntry] = (try? JSONDecoder().decode(
+            [BookSpineEntry].self, from: book.spineJSON)) ?? []
+        let contentBase = root.appendingPathComponent(
+            (book.opfRelativePath as NSString).deletingLastPathComponent, isDirectory: true)
+        for entry in spine.prefix(3) {
+            let url = contentBase.appendingPathComponent(entry.href)
+            guard let data = try? Data(contentsOf: url),
+                  let xhtml = String(data: data, encoding: .utf8),
+                  let md = try? XHTMLToMarkdown.convert(xhtml: xhtml),
+                  !md.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else { continue }
+            return md
+        }
+        return nil
     }
 
     private static func convertToBookTOC(_ n: EPUBTOCNode) -> BookTOCEntry {

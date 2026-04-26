@@ -33,6 +33,13 @@ final class Book {
     /// (epub-only) keep decoding cleanly.
     var kindRaw: String?
 
+    /// AI-suggested metadata. Set asynchronously after import when the title
+    /// looks junk. Nil until AI runs; nil after user dismisses.
+    var aiSuggestionData: Data?
+
+    /// AI-suggested folder name. Set by FolderCategorizer. Nil until AI runs.
+    var suggestedFolder: String?
+
     init(
         id: UUID = UUID(),
         relativePath: String,
@@ -70,6 +77,16 @@ final class Book {
     var kind: BookKind {
         // Default to epub for legacy V4 records that pre-date this field.
         BookKind(rawValue: kindRaw ?? "epub") ?? .epub
+    }
+
+    var aiSuggestion: BookMetadataSuggestion? {
+        get {
+            guard let data = aiSuggestionData else { return nil }
+            return try? JSONDecoder().decode(BookMetadataSuggestion.self, from: data)
+        }
+        set {
+            aiSuggestionData = try? JSONEncoder().encode(newValue)
+        }
     }
 }
 

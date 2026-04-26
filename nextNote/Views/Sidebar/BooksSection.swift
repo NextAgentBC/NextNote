@@ -30,6 +30,15 @@ struct BooksSection: View {
     @State private var deleteTarget: String?
     @State private var folderError: String?
 
+    // Tidy with AI state
+    @State private var isTidying = false
+    @State private var tidyProposals: [(book: Book, suggestedFolder: String)] = []
+    @State private var tidySelections: Set<UUID> = []
+    @State private var showTidySheet = false
+
+    // Per-book AI suggestion confirm state
+    @State private var suggestionTarget: Book? = nil
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             sectionHeader
@@ -85,6 +94,12 @@ struct BooksSection: View {
         } message: {
             Text(folderError ?? "")
         }
+        .sheet(isPresented: $showTidySheet) {
+            tidySheet
+        }
+        .sheet(item: $suggestionTarget) { book in
+            aiSuggestionSheet(for: book)
+        }
     }
 
     // MARK: - Header
@@ -93,15 +108,19 @@ struct BooksSection: View {
         HStack(spacing: 8) {
             Spacer()
             Button {
-                tidyWithClaude()
+                tidyWithAI()
             } label: {
-                Image(systemName: "sparkles.tv")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                if isTidying {
+                    ProgressView().controlSize(.mini)
+                } else {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
             }
             .buttonStyle(.plain)
-            .help("Tidy with Claude — route loose books into existing folders")
-            .disabled(libraryRoots.ebooksRoot == nil)
+            .help("Tidy with AI — suggest folders for loose books")
+            .disabled(libraryRoots.ebooksRoot == nil || isTidying)
 
             Button {
                 newFolderName = ""
@@ -118,20 +137,23 @@ struct BooksSection: View {
         .padding(.vertical, 2)
     }
 
-    /// Drop a pre-baked prompt into the embedded terminal so Claude CLI
-    /// can scan the ebooks root, propose a routing plan, and execute it
-    /// after explicit confirmation. Drag-drop in the sidebar is fragile
-    /// for the long-tail (file paths with non-ASCII characters, drag
-    /// session edge cases) — this is the reliable escape hatch.
-    private func tidyWithClaude() {
+    private func tidyWithAI() {
         guard let root = libraryRoots.ebooksRoot else { return }
-        let prompt = TidyEbooksPrompt.build(rootPath: root.path)
-        appState.showTerminal = true
-        appState.pendingTerminalCommand = "claude " + shellEscape(prompt)
-    }
-
-    private func shellEscape(_ s: String) -> String {
-        "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        isTidying = true
+        let existingFolders = EbookLibraryActions.discoverFolders(under: root)
+        let ai = appState.aiService
+        let booksToTidy = books
+        Task { @MainActor in
+            let proposals = (try? await FolderCategorizer.batchSuggest(
+                books: booksToTidy,
+                existingFolders: existingFolders,
+                ai: ai
+            )) ?? []
+            tidyProposals = proposals.filter { folderKey(for: $0.book) != $0.suggestedFolder }
+            tidySelections = Set(tidyProposals.map { $0.book.id })
+            isTidying = false
+            if !tidyProposals.isEmpty { showTidySheet = true }
+        }
     }
 
     // MARK: - Grouping
@@ -246,14 +268,32 @@ struct BooksSection: View {
     private func bookRow(_ book: Book, indent: CGFloat = 10) -> some View {
         let isActive = appState.activeBookID == book.id
 
-        HStack(spacing: 6) {
-            Image(systemName: "book.closed")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-            Text(book.title)
-                .font(.system(size: 13))
-                .lineLimit(1)
-            Spacer()
+        VStack(alignment: .leading, spacing: 1) {
+            HStack(spacing: 6) {
+                Image(systemName: "book.closed")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                Text(book.title)
+                    .font(.system(size: 13))
+                    .lineLimit(1)
+                Spacer()
+            }
+            if let suggestion = book.aiSuggestion, let suggestedTitle = suggestion.title {
+                Button {
+                    suggestionTarget = book
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 9))
+                        Text(suggestedTitle)
+                            .font(.system(size: 10))
+                            .lineLimit(1)
+                    }
+                    .foregroundStyle(Color.accentColor)
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, 17)
+            }
         }
         .foregroundStyle(isActive ? Color.accentColor : .primary)
         .padding(.vertical, 3)
@@ -464,10 +504,6 @@ struct BooksSection: View {
         diskFolders = EbookLibraryActions.discoverFolders(under: root)
     }
 
-    /// Sync stale Book.relativePath entries with the actual on-disk
-    /// location. Cheap walk of the ebooks tree on every appear / root
-    /// change — keeps the sidebar in sync when files were moved out-of-
-    /// band (Finder, half-synced drag-drops from earlier builds).
     private func reconcileBookPaths() {
         guard let root = libraryRoots.ebooksRoot else { return }
         _ = EbookLibraryActions.reconcile(
@@ -476,6 +512,125 @@ struct BooksSection: View {
             vault: vaultEnv,
             modelContext: modelContext
         )
+    }
+
+    // MARK: - Tidy sheet
+
+    @ViewBuilder
+    private var tidySheet: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Tidy with AI")
+                .font(.headline)
+            Text("AI suggested folders for \(tidyProposals.count) book(s). Check the moves you want to apply.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            List(tidyProposals, id: \.book.id) { proposal in
+                HStack {
+                    Toggle(isOn: Binding(
+                        get: { tidySelections.contains(proposal.book.id) },
+                        set: { on in
+                            if on { tidySelections.insert(proposal.book.id) }
+                            else { tidySelections.remove(proposal.book.id) }
+                        }
+                    )) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(proposal.book.title)
+                                .font(.system(size: 13))
+                            HStack(spacing: 4) {
+                                Text(folderKey(for: proposal.book).isEmpty ? "(root)" : folderKey(for: proposal.book))
+                                    .foregroundStyle(.secondary)
+                                Image(systemName: "arrow.right")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.secondary)
+                                Text(proposal.suggestedFolder)
+                                    .foregroundStyle(Color.accentColor)
+                            }
+                            .font(.system(size: 11))
+                        }
+                    }
+                }
+            }
+
+            HStack {
+                Button("Cancel") { showTidySheet = false }
+                    .keyboardShortcut(.cancelAction)
+                Spacer()
+                Button("Apply \(tidySelections.count) Move(s)") {
+                    applyTidyProposals()
+                    showTidySheet = false
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(tidySelections.isEmpty)
+            }
+        }
+        .padding()
+        .frame(minWidth: 420, minHeight: 300)
+    }
+
+    private func applyTidyProposals() {
+        guard let root = libraryRoots.ebooksRoot else { return }
+        for proposal in tidyProposals where tidySelections.contains(proposal.book.id) {
+            do {
+                try EbookLibraryActions.moveBook(
+                    proposal.book,
+                    toFolder: proposal.suggestedFolder,
+                    root: root,
+                    vault: vaultEnv,
+                    modelContext: modelContext
+                )
+            } catch {
+                folderError = error.localizedDescription
+            }
+        }
+        refreshDiskFolders()
+    }
+
+    // MARK: - Per-book AI suggestion sheet
+
+    @ViewBuilder
+    private func aiSuggestionSheet(for book: Book) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("AI Suggestion")
+                .font(.headline)
+            if let s = book.aiSuggestion {
+                VStack(alignment: .leading, spacing: 8) {
+                    if let title = s.title {
+                        LabeledContent("Suggested Title", value: title)
+                    }
+                    if let author = s.author {
+                        LabeledContent("Suggested Author", value: author)
+                    }
+                    if let summary = s.summary {
+                        Text(summary)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            HStack {
+                Button("Dismiss") {
+                    book.aiSuggestion = nil
+                    try? modelContext.save()
+                    suggestionTarget = nil
+                }
+                .keyboardShortcut(.cancelAction)
+                Spacer()
+                Button("Apply") {
+                    if let s = book.aiSuggestion {
+                        if let title = s.title, !title.isEmpty { book.title = title }
+                        if let author = s.author, !author.isEmpty { book.author = author }
+                    }
+                    book.aiSuggestion = nil
+                    try? modelContext.save()
+                    suggestionTarget = nil
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(book.aiSuggestion?.title == nil && book.aiSuggestion?.author == nil)
+            }
+        }
+        .padding()
+        .frame(minWidth: 360)
     }
 }
 
