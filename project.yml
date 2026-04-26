@@ -24,6 +24,10 @@ packages:
   SwiftTerm:
     url: https://github.com/migueldeicaza/SwiftTerm
     from: "1.2.0"
+  # Postgres client for ebook vector DB (P5).
+  PostgresNIO:
+    url: https://github.com/vapor/postgres-nio.git
+    from: "1.21.0"
 
 targets:
   nextNote:
@@ -44,6 +48,7 @@ targets:
       - package: ZIPFoundation
       - package: SwiftSoup
       - package: SwiftTerm
+      - package: PostgresNIO
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.nextnote.app

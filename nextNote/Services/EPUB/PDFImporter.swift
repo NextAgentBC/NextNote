@@ -14,11 +14,13 @@ final class PDFImporter {
     private let vault: VaultStore
     private let context: ModelContext
     private let aiService: AIService?
+    private let embeddingPipeline: EmbeddingPipeline?
 
-    init(vault: VaultStore, context: ModelContext, aiService: AIService? = nil) {
+    init(vault: VaultStore, context: ModelContext, aiService: AIService? = nil, embeddingPipeline: EmbeddingPipeline? = nil) {
         self.vault = vault
         self.context = context
         self.aiService = aiService
+        self.embeddingPipeline = embeddingPipeline
     }
 
     enum ImportError: LocalizedError {
@@ -100,6 +102,26 @@ final class PDFImporter {
                 guard let suggestion, suggestion.title != nil || suggestion.author != nil else { return }
                 capturedBook.aiSuggestion = suggestion
                 try? capturedBook.modelContext?.save()
+            }
+        }
+
+        if let pipeline = embeddingPipeline {
+            let capturedBook = book
+            let capturedURL = pdfURL
+            Task { @MainActor in
+                #if os(macOS)
+                let texts: [String] = PDFDocument(url: capturedURL).map { doc in
+                    (0..<doc.pageCount).compactMap { doc.page(at: $0)?.string }
+                } ?? []
+                #else
+                let texts: [String] = []
+                #endif
+                do {
+                    try await pipeline.embed(book: capturedBook, chapterTexts: texts)
+                    try? capturedBook.modelContext?.save()
+                } catch {
+                    capturedBook.embeddingStatus = .pending
+                }
             }
         }
 

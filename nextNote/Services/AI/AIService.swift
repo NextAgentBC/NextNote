@@ -181,22 +181,39 @@ final class AIService: ObservableObject {
     struct TestResult {
         let chat: Bool
         let embed: Bool
+        let postgres: Bool
         let chatError: String?
         let embedError: String?
+        let postgresError: String?
     }
 
-    func testConnection() async -> TestResult {
+    func testConnection(vectorStore: VectorStore? = nil) async -> TestResult {
         let provider = currentProvider
 
         async let chatResult = testChat(provider: provider)
         async let embedResult = testEmbed(provider: provider)
 
+        var postgresOK = false
+        var postgresErr: String? = nil
+        if let store = vectorStore, provider.vectorDSN != nil {
+            do {
+                try await store.testConnection()
+                postgresOK = true
+            } catch {
+                postgresErr = error.localizedDescription
+            }
+        } else if provider.vectorDSN == nil {
+            postgresErr = "No DSN configured"
+        }
+
         let (chat, embed) = await (chatResult, embedResult)
         return TestResult(
             chat: chat.0,
             embed: embed.0,
+            postgres: postgresOK,
             chatError: chat.1,
-            embedError: embed.1
+            embedError: embed.1,
+            postgresError: postgresErr
         )
     }
 

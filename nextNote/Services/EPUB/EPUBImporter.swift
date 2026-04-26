@@ -25,11 +25,13 @@ final class EPUBImporter {
     private let vault: VaultStore
     private let context: ModelContext
     let aiService: AIService?
+    let embeddingPipeline: EmbeddingPipeline?
 
-    init(vault: VaultStore, context: ModelContext, aiService: AIService? = nil) {
+    init(vault: VaultStore, context: ModelContext, aiService: AIService? = nil, embeddingPipeline: EmbeddingPipeline? = nil) {
         self.vault = vault
         self.context = context
         self.aiService = aiService
+        self.embeddingPipeline = embeddingPipeline
     }
 
     // MARK: - Caches dir
@@ -196,6 +198,20 @@ final class EPUBImporter {
             }
         }
 
+        if let pipeline = embeddingPipeline {
+            let capturedBook = book
+            let capturedVault = vault
+            Task { @MainActor in
+                let chapterTexts = await Self.allChapterTexts(book: capturedBook, vault: capturedVault)
+                do {
+                    try await pipeline.embed(book: capturedBook, chapterTexts: chapterTexts)
+                    try? capturedBook.modelContext?.save()
+                } catch {
+                    capturedBook.embeddingStatus = .pending
+                }
+            }
+        }
+
         return book
     }
 
@@ -309,6 +325,25 @@ final class EPUBImporter {
     }
 
     // MARK: - AI helpers
+
+    static func allChapterTexts(book: Book, vault: VaultStore) async -> [String] {
+        guard let root = try? ensureUnzipped(book, vault: vault) else { return [] }
+        let spine: [BookSpineEntry] = (try? JSONDecoder().decode(
+            [BookSpineEntry].self, from: book.spineJSON)) ?? []
+        let contentBase = root.appendingPathComponent(
+            (book.opfRelativePath as NSString).deletingLastPathComponent, isDirectory: true)
+        var texts: [String] = []
+        for entry in spine {
+            let url = contentBase.appendingPathComponent(entry.href)
+            guard let data = try? Data(contentsOf: url),
+                  let xhtml = String(data: data, encoding: .utf8),
+                  let md = try? XHTMLToMarkdown.convert(xhtml: xhtml),
+                  !md.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else { continue }
+            texts.append(md)
+        }
+        return texts
+    }
 
     static func firstChapterText(book: Book, vault: VaultStore) async -> String? {
         guard let root = try? ensureUnzipped(book, vault: vault) else { return nil }

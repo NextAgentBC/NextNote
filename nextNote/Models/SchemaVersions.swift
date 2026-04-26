@@ -58,3 +58,13 @@ enum NextNoteSchemaV6: VersionedSchema {
         [TextDocument.self, Note.self, Book.self, BookHighlight.self, DownloadJob.self]
     }
 }
+
+// V7: Book gains `documentID` (optional UUID, FK to Postgres vector DB) and
+// `embeddingStatusRaw` (String, default "pending"). Both have default values
+// so V6 records coexist without migration.
+enum NextNoteSchemaV7: VersionedSchema {
+    static let versionIdentifier = Schema.Version(7, 0, 0)
+    static var models: [any PersistentModel.Type] {
+        [TextDocument.self, Note.self, Book.self, BookHighlight.self, DownloadJob.self]
+    }
+}

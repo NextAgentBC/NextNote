@@ -3,12 +3,16 @@ import SwiftUI
 struct AISettingsView: View {
     @StateObject private var settings = AIProviderSettings.shared
     @StateObject private var aiService = AIService()
+    @EnvironmentObject private var appState: AppState
 
     @State private var apiKeyInput: String = ""
     @State private var testResult: AIService.TestResult?
     @State private var isTesting = false
     @State private var showChatTooltip = false
     @State private var showEmbedTooltip = false
+    @State private var docCount: Int? = nil
+    @State private var isEmbeddingLibrary = false
+    @State private var embedProgress: Double = 0
 
     var body: some View {
         Form {
@@ -66,7 +70,32 @@ struct AISettingsView: View {
                     HStack(spacing: 8) {
                         statusDot(ok: result.chat, label: "Chat", error: result.chatError)
                         statusDot(ok: result.embed, label: "Embed", error: result.embedError)
+                        if settings.activeProvider.vectorDSN != nil {
+                            statusDot(ok: result.postgres, label: "Postgres", error: result.postgresError)
+                        }
                     }
+                }
+            }
+
+            if let dsn = settings.activeProvider.vectorDSN {
+                Section("Vector DB") {
+                    let maskedDSN = maskPassword(dsn)
+                    labelRow("DSN", value: maskedDSN)
+                    if let count = docCount {
+                        labelRow("Indexed Documents", value: "\(count)")
+                    }
+                    Button("Refresh Count") {
+                        Task {
+                            docCount = try? await appState.vectorStore.documentCount()
+                        }
+                    }
+                    Button(isEmbeddingLibrary ? "Embedding… \(Int(embedProgress * 100))%" : "Re-embed Library") {
+                        reembedLibrary()
+                    }
+                    .disabled(isEmbeddingLibrary)
+                }
+                .task {
+                    docCount = try? await appState.vectorStore.documentCount()
                 }
             }
         }
@@ -134,11 +163,31 @@ struct AISettingsView: View {
         isTesting = true
         testResult = nil
         Task {
-            let result = await aiService.testConnection()
+            let result = await aiService.testConnection(vectorStore: appState.vectorStore)
             await MainActor.run {
                 testResult = result
                 isTesting = false
             }
         }
     }
+
+    private func reembedLibrary() {
+        isEmbeddingLibrary = true
+        embedProgress = 0
+        Task {
+            // No books list here — that lives in SwiftData model context.
+            // Post a notification that AppState/ContentView can handle.
+            NotificationCenter.default.post(name: .reembedLibraryRequested, object: nil)
+            await MainActor.run { isEmbeddingLibrary = false }
+        }
+    }
+
+    private func maskPassword(_ dsn: String) -> String {
+        guard let url = URL(string: dsn), let password = url.password, !password.isEmpty else { return dsn }
+        return dsn.replacingOccurrences(of: ":\(password)@", with: ":****@")
+    }
+}
+
+extension Notification.Name {
+    static let reembedLibraryRequested = Notification.Name("nextnote.reembedLibraryRequested")
 }

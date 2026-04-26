@@ -40,6 +40,12 @@ final class Book {
     /// AI-suggested folder name. Set by FolderCategorizer. Nil until AI runs.
     var suggestedFolder: String?
 
+    /// FK to Postgres documents.id in the vector DB. Set after embedding succeeds.
+    var documentID: UUID?
+
+    /// Embedding pipeline state.
+    var embeddingStatusRaw: String = EmbeddingStatus.pending.rawValue
+
     init(
         id: UUID = UUID(),
         relativePath: String,
@@ -77,6 +83,11 @@ final class Book {
     var kind: BookKind {
         // Default to epub for legacy V4 records that pre-date this field.
         BookKind(rawValue: kindRaw ?? "epub") ?? .epub
+    }
+
+    var embeddingStatus: EmbeddingStatus {
+        get { EmbeddingStatus(rawValue: embeddingStatusRaw) ?? .pending }
+        set { embeddingStatusRaw = newValue.rawValue }
     }
 
     var aiSuggestion: BookMetadataSuggestion? {
@@ -149,6 +160,10 @@ struct BookTOCEntry: Codable, Hashable, Identifiable {
         self.spineIndex = try c.decodeIfPresent(Int.self, forKey: .spineIndex)
         self.anchor = try c.decodeIfPresent(String.self, forKey: .anchor)
     }
+}
+
+enum EmbeddingStatus: String {
+    case pending, embedded, failed
 }
 
 // Spine entry — persisted inside Book.spineJSON.
