@@ -13,7 +13,7 @@ extension LibrarySidebar {
                 ScrollView {
                     BooksSection(books: books)
                 }
-                .frame(maxHeight: .infinity, alignment: .top)
+                .frame(maxHeight: 260)
             }
         }
     }

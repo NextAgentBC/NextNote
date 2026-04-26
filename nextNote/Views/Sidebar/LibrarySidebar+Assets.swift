@@ -76,7 +76,7 @@ extension LibrarySidebar {
                         }
                     }
                 }
-                .frame(maxHeight: .infinity, alignment: .top)
+                .frame(maxHeight: 260)
             }
         }
         .task {
