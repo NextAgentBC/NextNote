@@ -25,46 +25,48 @@ final class EmbeddingPipeline: ObservableObject {
         book.documentID = documentID
         NSLog("[Embed] '\(title)' doc id %@", documentID.uuidString)
 
-        let batchSize = 1
-        var embeddedChunks: [(idx: Int, content: String, embedding: [Float], tokenCount: Int)] = []
+        // Clear any partial chunks from previous run, then append per batch
+        // so progress is visible incrementally and a crash mid-book keeps
+        // already-embedded chunks rather than discarding everything.
+        try await store.clearChunks(documentID: documentID)
 
-        for batchStart in stride(from: 0, to: chunks.count, by: batchSize) {
-            let batchEnd = min(batchStart + batchSize, chunks.count)
-            let batch = Array(chunks[batchStart..<batchEnd])
-            let texts = batch.map { $0.content }
-
+        for (i, chunk) in chunks.enumerated() {
+            let texts = [chunk.content]
             var embeddings: [[Float]]
             do {
                 embeddings = try await ai.embed(texts)
             } catch {
-                NSLog("[Embed] '\(title)' batch %d-%d FIRST attempt failed: %@", batchStart, batchEnd, String(describing: error))
+                NSLog("[Embed] '\(title)' chunk %d FIRST failed: %@", i, String(describing: error))
                 do {
                     embeddings = try await ai.embed(texts)
                 } catch {
-                    NSLog("[Embed] '\(title)' batch %d-%d RETRY failed: %@", batchStart, batchEnd, String(describing: error))
+                    NSLog("[Embed] '\(title)' chunk %d RETRY failed: %@", i, String(describing: error))
                     throw error
                 }
             }
-            NSLog("[Embed] '\(title)' batch %d-%d: got %d vectors", batchStart, batchEnd, embeddings.count)
+            guard let vec = embeddings.first else {
+                NSLog("[Embed] '\(title)' chunk %d: empty embeddings array", i)
+                continue
+            }
 
-            for (i, chunk) in batch.enumerated() {
-                guard i < embeddings.count else { continue }
-                embeddedChunks.append((
+            do {
+                try await store.appendChunk(
+                    documentID: documentID,
                     idx: chunk.index,
                     content: chunk.content,
-                    embedding: embeddings[i],
+                    embedding: vec,
                     tokenCount: chunk.tokenCount
-                ))
+                )
+            } catch {
+                NSLog("[Embed] '\(title)' chunk %d appendChunk FAILED: %@", i, String(describing: error))
+                throw error
+            }
+
+            if (i + 1) % 5 == 0 || i == chunks.count - 1 {
+                NSLog("[Embed] '\(title)': %d/%d chunks committed", i + 1, chunks.count)
             }
         }
 
-        do {
-            try await store.insertChunks(documentID: documentID, chunks: embeddedChunks)
-            NSLog("[Embed] '\(title)' inserted %d chunks", embeddedChunks.count)
-        } catch {
-            NSLog("[Embed] '\(title)' insertChunks FAILED: %@", String(describing: error))
-            throw error
-        }
         book.embeddingStatus = .embedded
     }
 

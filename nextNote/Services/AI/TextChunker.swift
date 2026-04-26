@@ -8,13 +8,12 @@ struct TextChunker {
     }
 
     static func chunk(book: Book, chapterTexts: [String]) -> [Chunk] {
-        // Server runs with -c 40960 -np 1 (single slot, full 40k ctx). Per-chunk
-        // prefill on iGPU is ~210ms/token, so 2000 tokens ≈ 10s. Larger chunks
-        // would push request time past the URLSession timeout for marginal
-        // retrieval gain. 8000 chars = ~2000 tokens balances speed and
-        // semantic coherence per chunk.
-        let windowSize = 8000
-        let overlap = 800
+        // RAG best practice is ~1000-2000 tokens per chunk for retrieval
+        // precision. 5000 chars ≈ 1250 tokens. At ~300 tok/s prefill that's
+        // ~4s per chunk, much faster than larger windows for similar-or-better
+        // search quality. 500-char overlap preserves context across boundaries.
+        let windowSize = 5000
+        let overlap = 500
         var out: [Chunk] = []
         var chunkIdx = 0
         for text in chapterTexts {

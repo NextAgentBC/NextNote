@@ -125,18 +125,55 @@ actor VectorStore {
                 logger: self.logger
             )
             for chunk in chunks {
-                let vecString = "[" + chunk.embedding.map { String($0) }.joined(separator: ",") + "]"
-                let vecSQL: PostgresQuery = """
-                    INSERT INTO chunks (document_id, chunk_index, content, embedding, token_count)
-                    VALUES (\(documentID), \(chunk.idx), \(chunk.content), \(vecString)::vector, \(chunk.tokenCount))
-                    ON CONFLICT (document_id, chunk_index) DO UPDATE
-                      SET content = EXCLUDED.content,
-                          embedding = EXCLUDED.embedding,
-                          token_count = EXCLUDED.token_count
-                    """
-                try await conn.query(vecSQL, logger: self.logger)
+                try await Self.insertOne(conn: conn, documentID: documentID, chunk: chunk, logger: self.logger)
             }
         }
+    }
+
+    /// Append one chunk without DELETE — caller is responsible for clearing
+    /// previous rows if the embedding session restarts.
+    func appendChunk(
+        documentID: UUID,
+        idx: Int,
+        content: String,
+        embedding: [Float],
+        tokenCount: Int
+    ) async throws {
+        try await withConnection { conn in
+            try await Self.insertOne(
+                conn: conn,
+                documentID: documentID,
+                chunk: (idx: idx, content: content, embedding: embedding, tokenCount: tokenCount),
+                logger: self.logger
+            )
+        }
+    }
+
+    func clearChunks(documentID: UUID) async throws {
+        try await withConnection { conn in
+            try await conn.query(
+                "DELETE FROM chunks WHERE document_id = \(documentID)",
+                logger: self.logger
+            )
+        }
+    }
+
+    private static func insertOne(
+        conn: PostgresConnection,
+        documentID: UUID,
+        chunk: (idx: Int, content: String, embedding: [Float], tokenCount: Int),
+        logger: Logger
+    ) async throws {
+        let vecString = "[" + chunk.embedding.map { String($0) }.joined(separator: ",") + "]"
+        let vecSQL: PostgresQuery = """
+            INSERT INTO chunks (document_id, chunk_index, content, embedding, token_count)
+            VALUES (\(documentID), \(chunk.idx), \(chunk.content), \(vecString)::vector, \(chunk.tokenCount))
+            ON CONFLICT (document_id, chunk_index) DO UPDATE
+              SET content = EXCLUDED.content,
+                  embedding = EXCLUDED.embedding,
+                  token_count = EXCLUDED.token_count
+            """
+        try await conn.query(vecSQL, logger: logger)
     }
 
     // MARK: - Search Similar
