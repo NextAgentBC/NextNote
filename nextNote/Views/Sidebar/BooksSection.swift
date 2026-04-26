@@ -1,6 +1,5 @@
 import SwiftUI
 import SwiftData
-import UniformTypeIdentifiers
 
 /// Books section — rendered inside LibrarySidebar's Ebooks tray. Lists
 /// imported books grouped by their first-level subfolder under the
@@ -175,10 +174,14 @@ struct BooksSection: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .dropDestination(for: BookDragPayload.self) { payloads, _ in
+        .dropDestination(for: URL.self) { urls, _ in
             dropTargetFolder = nil
-            for p in payloads {
-                if let book = books.first(where: { $0.id == p.id }) {
+            for url in urls {
+                let stdPath = url.standardizedFileURL.path
+                if let book = books.first(where: {
+                    EPUBImporter.resolveFileURL($0.relativePath, vault: vaultEnv)?
+                        .standardizedFileURL.path == stdPath
+                }) {
                     moveBook(book, toFolder: group.folder)
                 }
             }
@@ -226,7 +229,7 @@ struct BooksSection: View {
         .contentShape(Rectangle())
         .onTapGesture { openBook(book) }
         .background(isActive ? Color.accentColor.opacity(0.12) : Color.clear)
-        .draggable(BookDragPayload(id: book.id))
+        .draggable(EPUBImporter.resolveFileURL(book.relativePath, vault: vaultEnv) ?? URL(fileURLWithPath: "/"))
         .contextMenu {
             Button("Reveal in Finder") { revealInFinder(book) }
             Button("Refresh Table of Contents") { refreshTOC(book) }
@@ -382,16 +385,3 @@ struct BooksSection: View {
     }
 }
 
-/// Drag payload for a book row — UUID-only so it survives encoding +
-/// can't accidentally carry a stale Book reference across the drop.
-struct BookDragPayload: Codable, Transferable {
-    let id: UUID
-
-    static var transferRepresentation: some TransferRepresentation {
-        CodableRepresentation(contentType: .nextNoteBookDrag)
-    }
-}
-
-extension UTType {
-    static let nextNoteBookDrag = UTType(exportedAs: "com.nextnote.book.drag")
-}

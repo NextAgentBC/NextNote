@@ -29,6 +29,9 @@ final class Book {
 
     var fontSize: Double
     var themeRaw: String
+    /// "epub" | "pdf". Optional + defaulted so books imported under V4
+    /// (epub-only) keep decoding cleanly.
+    var kindRaw: String?
 
     init(
         id: UUID = UUID(),
@@ -41,7 +44,8 @@ final class Book {
         tocJSON: Data,
         spineJSON: Data,
         opfRelativePath: String,
-        contentHash: String
+        contentHash: String,
+        kind: BookKind = .epub
     ) {
         self.id = id
         self.relativePath = relativePath
@@ -60,7 +64,18 @@ final class Book {
         self.contentHash = contentHash
         self.fontSize = 17
         self.themeRaw = BookTheme.light.rawValue
+        self.kindRaw = kind.rawValue
     }
+
+    var kind: BookKind {
+        // Default to epub for legacy V4 records that pre-date this field.
+        BookKind(rawValue: kindRaw ?? "epub") ?? .epub
+    }
+}
+
+enum BookKind: String, Codable, CaseIterable {
+    case epub
+    case pdf
 }
 
 enum BookTheme: String, CaseIterable, Identifiable {

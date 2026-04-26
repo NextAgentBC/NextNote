@@ -38,3 +38,13 @@ enum NextNoteSchemaV4: VersionedSchema {
         [TextDocument.self, Note.self, Book.self, BookHighlight.self, DownloadJob.self]
     }
 }
+
+// V5: Book gains optional `kindRaw` (epub | pdf) so PDF files can live
+// in the same library + reader pipeline as EPUBs. Field is optional so
+// V4 records decode without migration.
+enum NextNoteSchemaV5: VersionedSchema {
+    static let versionIdentifier = Schema.Version(5, 0, 0)
+    static var models: [any PersistentModel.Type] {
+        [TextDocument.self, Note.self, Book.self, BookHighlight.self, DownloadJob.self]
+    }
+}
