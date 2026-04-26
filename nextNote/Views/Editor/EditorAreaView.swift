@@ -26,11 +26,9 @@ extension ContentView {
             #if os(macOS)
             if appState.showTerminal {
                 Divider()
-                TerminalPane(
-                    workingDirectory: libraryRoots.notesRoot,
-                    pendingCommand: $appState.pendingTerminalCommand
-                )
-                .frame(minHeight: 120, idealHeight: 220, maxHeight: 400)
+                TerminalContainerView(workingDirectory: libraryRoots.notesRoot)
+                    .environmentObject(appState)
+                    .frame(minHeight: 140, idealHeight: 240, maxHeight: 440)
             }
             #endif
 

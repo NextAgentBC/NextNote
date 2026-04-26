@@ -50,15 +50,8 @@ struct NextNoteCommands: Commands {
             .keyboardShortcut("f", modifiers: .command)
         }
 
-        // AI menu — command palette + embedded terminal toggle + daily-note
-        // + capture HUD. Phase B+C of AI_PLAN.md surfaces these as top-level
-        // accelerators so CLI workflows are one keystroke away.
-        CommandMenu("AI") {
-            Button(appState.showCommandPalette ? "Close Command Palette" : "Run Skill…") {
-                appState.showCommandPalette.toggle()
-            }
-            .keyboardShortcut("k", modifiers: .command)
-
+        // Workflow menu — terminal and shortcuts toggles.
+        CommandMenu("Workflow") {
             Button(appState.showTerminal ? "Hide Terminal" : "Show Terminal") {
                 appState.showTerminal.toggle()
             }
@@ -66,17 +59,10 @@ struct NextNoteCommands: Commands {
 
             Divider()
 
-            Button("Open Today's Daily Note") {
-                appState.triggerOpenDailyNote = true
+            Button(appState.showShortcuts ? "Hide Shortcuts" : "Show Shortcuts") {
+                appState.showShortcuts.toggle()
             }
-            .keyboardShortcut("d", modifiers: [.command, .shift])
-            .disabled(libraryRoots.notesRoot == nil)
-
-            Button("Quick Capture…") {
-                appState.showCaptureHUD = true
-            }
-            .keyboardShortcut("n", modifiers: [.command, .shift])
-            .disabled(libraryRoots.notesRoot == nil)
+            .keyboardShortcut("/", modifiers: .command)
         }
 
         // Merge into the system View menu (NavigationSplitView already adds
@@ -110,13 +96,6 @@ struct NextNoteCommands: Commands {
             Button("Change Ebooks Folder…") {
                 Task { await libraryRoots.pick(kind: .ebooks) }
             }
-
-            Divider()
-
-            Button("Apply AI Soul Preset to Notes…") {
-                appState.triggerApplyPreset = true
-            }
-            .disabled(libraryRoots.notesRoot == nil)
 
             Divider()
 
@@ -208,13 +187,6 @@ struct NextNoteCommands: Commands {
                 }
             }
 
-            Button("Generate Playlists from Folders (AI)") {
-                Task { @MainActor in
-                    guard let root = MediaLibrary.shared.ambientFolderURL else { return }
-                    _ = await MediaLibrary.shared.generatePlaylistsFromFolders(root: root)
-                }
-            }
-
             Divider()
 
             Button("Download from YouTube…") {
@@ -222,40 +194,6 @@ struct NextNoteCommands: Commands {
             }
         }
 
-        // AI menu
-        CommandMenu("AI") {
-            Button("Rebuild All Dashboards") {
-                Task { await DashboardService.shared.regenerateAll() }
-            }
-            .keyboardShortcut("r", modifiers: [.command, .shift])
-
-            Button("Run Daily Digest Now") {
-                Task { await DailyDigestService.shared.runNow() }
-            }
-
-            Divider()
-
-            Button("Summarize") {
-                // TODO: AI summarize
-            }
-            .keyboardShortcut("s", modifiers: [.command, .option])
-
-            Button("Polish") {
-                // TODO: AI polish
-            }
-
-            Button("Continue Writing") {
-                // TODO: AI continue
-            }
-
-            Button("Translate") {
-                // TODO: AI translate
-            }
-
-            Button("Grammar Check") {
-                // TODO: AI grammar check
-            }
-        }
     }
 
     private func navigateTab(direction: Int) {

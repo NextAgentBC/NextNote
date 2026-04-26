@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.0 — 2026-04-24
+
+### UX cleanup — menus, toolbar, sidebar tabs, terminal chrome
+
+Sidebar had four trays stacked in one scroll; toolbar still opened the old MLX chat panel; terminal had no close affordance. All fixed.
+
+- **Sidebar as segmented tabs.** Top of the sidebar is now a 4-tab switcher — **Notes / Assets / Media / Ebooks** — each one a full-height dedicated view. No more shared 420pt scroll region clipping the bottom tray on short windows.
+- **Terminal chrome.** Light theme to match the app (white surface, dark text, muted ANSI palette). Header strip shows cwd path + ✕ close, 🪄 palette, and eraser (clear screen) buttons. ⌘⇧T still toggles the whole pane.
+- **Toolbar wand replaces brain.** The 🧠 icon used to open the legacy MLX AI Chat panel (with a "Model not loaded" warning for anyone without the model). Now it's ✨ `wand.and.sparkles` that opens the ⌘K command palette instead.
+- **AI menu → Workflow menu.** Grouped by intent: Capture (⌘⇧N) · Navigate (⌘⇧D) · Dispatch (⌘K, ⌘⇧T). The name "AI" conflated two things (the legacy chat panel vs. the CLI workflow); "Workflow" is what this menu actually is.
+
 ## 0.3.0 — 2026-04-24
 
 ### AI Soul — Phase C begins

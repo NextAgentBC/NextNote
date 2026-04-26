@@ -1,4 +1,4 @@
-.PHONY: gen build build-fast build-release xcodebuild-app xcodebuild-debug run run-fast launch clean sign help release release-signed notarize
+.PHONY: gen build build-fast build-release xcodebuild-app xcodebuild-debug install-app run run-fast launch clean sign help release release-signed notarize
 
 # Build output lives in build.nosync/ — the .nosync suffix tells iCloud
 # Documents to skip the directory, preventing multi-GB .app bundles from
@@ -10,6 +10,7 @@ SCHEME := nextNote
 APP_NAME := NextNote
 APP_BUNDLE := $(APP_NAME).app
 APP_PATH := $(BUILD_DIR)/Build/Products/$(CONFIG)/$(APP_BUNDLE)
+APP_INSTALL_PATH := /Applications/$(APP_BUNDLE)
 
 VERSION := $(shell awk '/MARKETING_VERSION/ {gsub(/"/,""); gsub(/,/,""); print $$NF}' project.yml | head -1)
 
@@ -28,6 +29,7 @@ help:
 	@echo "  make build           — xcodebuild Debug (ad-hoc signed)"
 	@echo "  make build-fast      — Debug build without regenerating xcodeproj"
 	@echo "  make build-release   — xcodebuild Release (ad-hoc signed)"
+	@echo "  make install-app     — build, replace /Applications/NextNote.app, then clear caches"
 	@echo "  make run             — build + launch NextNote.app"
 	@echo "  make run-fast        — build-fast + launch NextNote.app"
 	@echo "  make release         — ad-hoc signed dist/NextNote-<VER>.{zip,dmg}"
@@ -57,6 +59,19 @@ build-release: gen
 
 xcodebuild-debug:
 	@$(MAKE) xcodebuild-app CONFIG=Debug
+
+install-app: build
+	@APP="$(APP_PATH)"; \
+	DEST="$(APP_INSTALL_PATH)"; \
+	if [ ! -d "$$APP" ]; then echo "install-app: $$APP not found"; exit 1; fi; \
+	pkill -9 -x nextNote 2>/dev/null || true; \
+	pkill -9 -x "$(APP_NAME)" 2>/dev/null || true; \
+	rm -rf "$$DEST"; \
+	ditto --norsrc --noextattr --noacl "$$APP" "$$DEST"; \
+	xattr -dr com.apple.quarantine "$$DEST" 2>/dev/null || true; \
+	codesign --verify --deep --strict "$$DEST"; \
+	rm -rf "$(BUILD_DIR)" dist "$$HOME/Library/Caches/com.nextnote.app" "$$HOME/Library/Saved Application State/com.nextnote.app.savedState" "$$HOME/Library/Developer/Xcode/DerivedData/nextNote-"*; \
+	echo "Installed $$DEST and cleared NextNote build/cache artifacts."
 
 xcodebuild-app:
 	@if command -v xcbeautify >/dev/null 2>&1; then \

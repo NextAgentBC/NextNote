@@ -3,20 +3,7 @@ import SwiftUI
 extension ContentView {
     @ViewBuilder
     var editorAndDock: some View {
-        #if os(macOS)
-        if showAIPanel {
-            VSplitView {
-                editorBody
-                    .frame(minHeight: 180)
-                AIChatPanelView(isPresented: $showAIPanel)
-                    .frame(minHeight: 220, idealHeight: 320)
-            }
-        } else {
-            editorBody
-        }
-        #else
         editorBody
-        #endif
     }
 
     @ViewBuilder

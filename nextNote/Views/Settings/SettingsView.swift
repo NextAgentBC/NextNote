@@ -11,8 +11,6 @@ struct SettingsView: View {
                 .tabItem { Label("Appearance", systemImage: "paintbrush") }
             EditorSettingsView()
                 .tabItem { Label("Editor", systemImage: "doc.text") }
-            AISettingsView()
-                .tabItem { Label("AI", systemImage: "brain") }
             VaultSettingsView()
                 .tabItem { Label("Vault", systemImage: "folder") }
             SyncSettingsView()
@@ -31,11 +29,6 @@ struct SettingsView: View {
                     EditorSettingsView()
                 } label: {
                     Label("Editor", systemImage: "doc.text")
-                }
-                NavigationLink {
-                    AISettingsView()
-                } label: {
-                    Label("AI", systemImage: "brain")
                 }
                 NavigationLink {
                     SyncSettingsView()

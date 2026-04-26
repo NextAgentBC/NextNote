@@ -35,7 +35,7 @@ extension LibrarySidebar {
                         }
                     }
                 }
-                .frame(maxHeight: 260)
+                .frame(maxHeight: .infinity, alignment: .top)
             }
         }
     }

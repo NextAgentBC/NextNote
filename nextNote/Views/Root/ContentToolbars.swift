@@ -29,14 +29,6 @@ extension ContentView {
         }
 
         ToolbarItem(placement: .primaryAction) {
-            Button {
-                withAnimation { showAIPanel = true }
-            } label: {
-                Image(systemName: "brain")
-            }
-        }
-
-        ToolbarItem(placement: .primaryAction) {
             Menu {
                 Button {
                     appState.showFileImporter = true
@@ -129,17 +121,6 @@ extension ContentView {
                     .accessibilityLabel("Preview Mode")
             }
             .help("Preview Mode")
-        }
-
-        ToolbarItem(placement: .primaryAction) {
-            Button {
-                withAnimation { showAIPanel.toggle() }
-            } label: {
-                Image(systemName: "brain")
-                    .accessibilityLabel("AI Assistant")
-            }
-            .help("AI Assistant (⌘⇧I)")
-            .keyboardShortcut("i", modifiers: [.command, .shift])
         }
 
         ToolbarItem(placement: .primaryAction) {

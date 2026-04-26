@@ -73,75 +73,10 @@ enum PlaylistSynth {
             }
     }
 
-    // MARK: - AI name suggestion
+    // MARK: - Name suggestion
 
-    /// Ask the LLM to promote a raw folder name into a clean playlist title.
-    /// Returns the folder name unchanged on any parse failure / timeout —
-    /// playlist generation must never hard-fail because the model hangs.
+    /// Returns the folder name as a playlist title (title-cased). No LLM.
     static func suggestName(folderName: String, sampleTitles: [String]) async -> String {
-        let system = LLMMessage(.system, """
-        You rename raw folder names into clean playlist titles. Strict JSON only:
-        {"name": "<playlist title>"}
-
-        Rules:
-        - Expand obvious abbreviations (MJ → Michael Jackson, BTS → BTS, lofi → Lo-Fi).
-        - Use natural title case. No quotes, no punctuation at the ends.
-        - If the folder name already looks clean, return it as-is.
-        - Keep under 40 characters.
-        - ASCII where possible.
-        """)
-        let sample = sampleTitles.prefix(5).joined(separator: "\n- ")
-        let user = LLMMessage(.user, """
-        Folder: \(folderName)
-        Sample files:
-        - \(sample)
-        """)
-
-        // Race a detached timeout task against the LLM call so a hung remote
-        // doesn't freeze the whole batch. If the deadline wins, we cancel
-        // the LLM task (URLSession honors cancellation) and fall back to the
-        // raw folder name.
-        let provider = AITextService.shared.currentProvider
-        let llmTask = Task { @MainActor () -> String? in
-            do {
-                let raw = try await provider.generate(
-                    messages: [system, user],
-                    parameters: LLMParameters(maxTokens: 80, temperature: 0.2)
-                )
-                return Self.parseName(from: raw)
-            } catch {
-                NSLog("[PlaylistSynth] AI error for '\(folderName)': \(error.localizedDescription)")
-                return nil
-            }
-        }
-        let deadline = Task.detached {
-            try? await Task.sleep(nanoseconds: 12_000_000_000)
-            llmTask.cancel()
-        }
-        let parsed = await llmTask.value
-        deadline.cancel()
-        if let parsed, !parsed.isEmpty { return parsed }
-        return folderName
-    }
-
-    nonisolated private static func parseName(from raw: String) -> String? {
-        var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        if s.hasPrefix("```") {
-            if let nl = s.firstIndex(of: "\n") {
-                s = String(s[s.index(after: nl)...])
-            }
-            if s.hasSuffix("```") { s = String(s.dropLast(3)) }
-        }
-        s = s.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let start = s.firstIndex(of: "{"),
-              let end = s.lastIndex(of: "}"),
-              start < end else { return nil }
-        let slice = String(s[start...end])
-        guard let data = slice.data(using: .utf8),
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let name = obj["name"] as? String
-        else { return nil }
-        let cleaned = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        return cleaned.isEmpty ? nil : String(cleaned.prefix(60))
+        folderName
     }
 }

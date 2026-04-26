@@ -22,18 +22,11 @@ final class AppState: ObservableObject {
     @Published var showTerminal: Bool = UserDefaults.standard.bool(forKey: "nextnote.terminal.show") {
         didSet { UserDefaults.standard.set(showTerminal, forKey: "nextnote.terminal.show") }
     }
-    @Published var showCommandPalette: Bool = false
     /// Command injected into the embedded terminal by the palette or other
     /// surfaces. TerminalPane consumes the value and clears it.
     @Published var pendingTerminalCommand: String? = nil
-    /// One-shot trigger from AI menu / sidebar button to open today's
-    /// `10_Daily/YYYY-MM-DD.md`. ContentView observes + resets.
-    @Published var triggerOpenDailyNote: Bool = false
-    /// One-shot trigger from Library menu to manually re-apply the AI Soul
-    /// preset to the current Notes root. ContentView observes + resets.
-    @Published var triggerApplyPreset: Bool = false
-    /// Capture HUD visibility — ⌘⇧N toggles.
-    @Published var showCaptureHUD: Bool = false
+    /// Shortcut cheatsheet overlay — ⌘/ toggles.
+    @Published var showShortcuts: Bool = false
     /// Active book — derived from the active tab's `bookID`. Kept as a
     /// convenience @Published so non-tab surfaces (sidebar highlights) don't
     /// have to poke into openTabs.
@@ -75,10 +68,6 @@ final class AppState: ObservableObject {
     /// Sidebar selection. Directory-typed selections drive "new note here" /
     /// "new folder here" targets; file-typed selections are informational.
     @Published var selectedSidebarPath: String = ""  // "" = vault root
-
-    /// Per-note chat session for the active tab. Swapped in `activateTab(...)`
-    /// via the view layer; nil when the active tab isn't a vault file.
-    @Published var activeChatSession: ChatSession?
 
     /// Reverse map — tab id → vault relative path. Used by the save hooks
     /// in ContentView to write the tab's buffer back to the on-disk .md.

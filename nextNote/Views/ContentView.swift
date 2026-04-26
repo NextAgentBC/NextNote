@@ -9,9 +9,11 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Query(sort: \TextDocument.modifiedAt, order: .reverse) private var documents: [TextDocument]
     @StateObject var preferences = UserPreferences.shared
-    @State var showAIPanel = false
     @State var showSettings = false
     @State private var showAmbientFolderPrompt = false
+    /// Last rescan timestamp — used to debounce focus-rescan against rapid
+    /// app-switch loops (Cmd-Tab / mission control).
+    @State private var lastRescanAt: Date = .distantPast
 
     var body: some View {
         Group {
@@ -54,10 +56,7 @@ struct ContentView: View {
         } message: {
             Text("Pick a long-term folder for your music and video collection. nextNote will auto-scan it and add everything to your media library. You can change it later from the Media menu.")
         }
-        .task {
-            guard preferences.vaultMode else { return }
-            await DailyDigestService.shared.generateIfDue()
-        }
+        // Library scan: rerun when any of the three roots change.
         .task(id: vault.root) { await rescanLibrary() }
         .onReceive(libraryRoots.$ebooksRoot) { _ in Task { await rescanLibrary() } }
         .onReceive(libraryRoots.$mediaRoot) { _ in Task { await rescanLibrary() } }
@@ -67,30 +66,33 @@ struct ContentView: View {
                 appState.triggerRescanLibrary = false
             }
         }
-        .onChange(of: appState.triggerOpenDailyNote) { _, v in
-            if v {
-                openDailyNote()
-                appState.triggerOpenDailyNote = false
-            }
-        }
-        .onChange(of: appState.triggerApplyPreset) { _, v in
-            if v {
-                applyPreset()
-                appState.triggerApplyPreset = false
-            }
-        }
+        // Rescan whenever the window regains focus — user dropped a file in
+        // Finder, switches back, expects to see it instantly. Debounced so
+        // app-switch storms (Cmd-Tab loops) don't trigger N back-to-back
+        // tree walks.
         #if os(macOS)
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+            let now = Date()
+            if now.timeIntervalSince(lastRescanAt) < 10 { return }
+            lastRescanAt = now
             Task { await rescanLibrary() }
         }
         #endif
+        // Background tick while app is frontmost — catches files added while
+        // the window was already focused. 60s is a deliberate compromise:
+        // shorter than this and the cumulative cost of three tree walks
+        // (vault + ebooks + media) shows up as periodic UI hitches; longer
+        // than this and ⌘N → file shows up "too late" feels broken.
         .task(id: vault.root) {
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(15))
+                try? await Task.sleep(for: .seconds(60))
                 guard !Task.isCancelled else { break }
+                lastRescanAt = Date()
                 await rescanLibrary()
             }
         }
+        // Auto-save: re-starts whenever autoSaveInterval changes; cancelled on view disappear.
+        // interval == 0 means "manual only" — task returns immediately without looping.
         .task(id: preferences.autoSaveInterval) {
             let interval = preferences.autoSaveInterval
             guard interval > 0 else { return }
@@ -100,38 +102,37 @@ struct ContentView: View {
                 saveAll()
             }
         }
+        // Cmd+S / manual save trigger from nextNoteCommands
         .onChange(of: appState.triggerSave) { _, triggered in
             guard triggered else { return }
             saveAll()
             appState.triggerSave = false
         }
+        // Save whenever the scene goes inactive (Cmd+Tab / home button / app switch)
         .onChange(of: scenePhase) { _, phase in
             if phase == .inactive || phase == .background {
                 saveAll()
             }
         }
-        .onChange(of: appState.activeTabId) { _, _ in
-            ChatSessionRouter.sync(appState: appState, vault: vault, preferences: preferences)
-        }
-        .onChange(of: vault.root) { _, _ in
-            ChatSessionRouter.sync(appState: appState, vault: vault, preferences: preferences)
-        }
-        .onAppear {
-            ChatSessionRouter.sync(appState: appState, vault: vault, preferences: preferences)
-        }
+        // Media library sheet — opened via AmbientBar button or Cmd+Shift+M.
         .sheet(isPresented: $appState.showMediaLibrary) {
             MediaLibraryView()
                 .environmentObject(appState)
                 .frame(minWidth: 760, minHeight: 460)
         }
+        // YouTube download sheet — opened via Media menu.
         .sheet(isPresented: $appState.showYouTubeDownload) {
             YouTubeDownloadView()
         }
+        // Asset Library sheet — grid browser for the fourth library root
+        // (images / video / audio). Cells are draggable onto the markdown
+        // editor, which turns the drop into `![](…)` syntax.
         .sheet(isPresented: $appState.showAssetLibrary) {
             AssetLibraryView()
                 .environmentObject(appState)
                 .environmentObject(libraryRoots)
         }
+        // File importer: supports both toolbar button and macOS menu (via appState.showFileImporter)
         .fileImporter(
             isPresented: $appState.showFileImporter,
             allowedContentTypes: FileType.openableUTTypes,
@@ -164,43 +165,6 @@ struct ContentView: View {
         await MediaLibrary.shared.scanRoot(libraryRoots.mediaRoot)
     }
 
-    @MainActor
-    private func openDailyNote() {
-        do {
-            let resolved = try DailyNoteRouter.resolve(notesRoot: libraryRoots.notesRoot)
-            appState.openVaultFile(relativePath: resolved.relativePath) {
-                let content = (try? String(contentsOf: resolved.absoluteURL, encoding: .utf8)) ?? ""
-                let title = ((resolved.relativePath as NSString).lastPathComponent as NSString).deletingPathExtension
-                return TextDocument(title: title, content: content, fileType: .md)
-            }
-            appState.selectedSidebarPath = resolved.relativePath
-            if resolved.wasCreated {
-                Task { await rescanLibrary() }
-            }
-        } catch {
-            appState.lastSaveError = "Daily note: \(error.localizedDescription)"
-        }
-    }
-
-    private func applyPreset() {
-        guard let notesRoot = libraryRoots.notesRoot else {
-            appState.lastSaveError = "Notes root is not configured."
-            return
-        }
-        do {
-            let report = try VaultPresetSeeder.seed(into: notesRoot)
-            Task { await rescanLibrary() }
-            let parts: [String] = [
-                report.copied.isEmpty ? nil : "copied \(report.copied.count)",
-                report.skipped.isEmpty ? nil : "kept \(report.skipped.count) identical",
-                report.conflicts.isEmpty ? nil : "skipped \(report.conflicts.count) conflicting"
-            ].compactMap { $0 }
-            appState.lastSaveError = "AI Soul preset: " + (parts.isEmpty ? "already up to date." : parts.joined(separator: ", ") + ".")
-        } catch {
-            appState.lastSaveError = "Preset apply failed: \(error.localizedDescription)"
-        }
-    }
-
     // MARK: - Sidebar
 
     @ViewBuilder
@@ -223,24 +187,16 @@ struct ContentView: View {
             editorArea
         }
         .toolbar { macToolbar }
-        .overlay(alignment: .top) {
-            if appState.showCommandPalette {
-                CommandPalette()
+        .overlay(alignment: .bottomTrailing) {
+            if appState.showShortcuts {
+                ShortcutCheatsheet()
                     .environmentObject(appState)
-                    .environmentObject(libraryRoots)
-                    .padding(.top, 80)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .padding(.trailing, 20)
+                    .padding(.bottom, 60)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
-        .overlay {
-            if appState.showCaptureHUD {
-                CaptureHUD()
-                    .environmentObject(appState)
-                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
-            }
-        }
-        .animation(.easeOut(duration: 0.15), value: appState.showCommandPalette)
-        .animation(.easeOut(duration: 0.15), value: appState.showCaptureHUD)
+        .animation(.easeOut(duration: 0.15), value: appState.showShortcuts)
         #else
         NavigationStack {
             editorArea
@@ -256,12 +212,6 @@ struct ContentView: View {
                                 }
                             }
                     }
-                }
-                .sheet(isPresented: $showAIPanel) {
-                    NavigationStack {
-                        AIActionPanelSheetView(isPresented: $showAIPanel)
-                    }
-                    .presentationDetents([.medium, .large])
                 }
                 .sheet(isPresented: $showSettings) {
                     NavigationStack {
