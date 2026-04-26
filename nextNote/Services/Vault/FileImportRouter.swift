@@ -5,7 +5,11 @@ enum FileImportRouter {
     @MainActor
     static func importFiles(urls: [URL], vault: VaultStore, appState: AppState, modelContext: ModelContext) {
         let epubs = urls.filter { $0.pathExtension.lowercased() == "epub" }
-        let rest  = urls.filter { $0.pathExtension.lowercased() != "epub" }
+        let pdfs  = urls.filter { $0.pathExtension.lowercased() == "pdf" }
+        let rest  = urls.filter { ext in
+            let e = ext.pathExtension.lowercased()
+            return e != "epub" && e != "pdf"
+        }
 
         if !epubs.isEmpty {
             Task { @MainActor in
@@ -15,6 +19,19 @@ enum FileImportRouter {
                         _ = try await importer.importEPUB(from: url)
                     } catch {
                         appState.lastSaveError = "EPUB import failed: \(error.localizedDescription)"
+                    }
+                }
+            }
+        }
+
+        if !pdfs.isEmpty {
+            Task { @MainActor in
+                let importer = PDFImporter(vault: vault, context: modelContext)
+                for url in pdfs {
+                    do {
+                        _ = try await importer.registerExisting(pdfURL: url)
+                    } catch {
+                        appState.lastSaveError = "PDF import failed: \(error.localizedDescription)"
                     }
                 }
             }

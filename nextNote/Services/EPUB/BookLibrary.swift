@@ -13,31 +13,47 @@ enum BookLibrary {
         context: ModelContext
     ) async {
         guard let root = ebooksRoot else { return }
-        let epubs = enumerate(root)
-        if epubs.isEmpty { return }
+        let (epubs, pdfs) = enumerate(root)
 
-        let importer = EPUBImporter(vault: vault, context: context)
-        for url in epubs {
-            do {
-                _ = try await importer.registerExisting(epubURL: url)
-            } catch {
-                continue
+        if !epubs.isEmpty {
+            let importer = EPUBImporter(vault: vault, context: context)
+            for url in epubs {
+                do {
+                    _ = try await importer.registerExisting(epubURL: url)
+                } catch {
+                    continue
+                }
+            }
+        }
+
+        if !pdfs.isEmpty {
+            let importer = PDFImporter(vault: vault, context: context)
+            for url in pdfs {
+                do {
+                    _ = try await importer.registerExisting(pdfURL: url)
+                } catch {
+                    continue
+                }
             }
         }
     }
 
-    private static func enumerate(_ root: URL) -> [URL] {
-        guard FileManager.default.fileExists(atPath: root.path) else { return [] }
+    private static func enumerate(_ root: URL) -> (epubs: [URL], pdfs: [URL]) {
+        guard FileManager.default.fileExists(atPath: root.path) else { return ([], []) }
         guard let enumerator = FileManager.default.enumerator(
             at: root,
             includingPropertiesForKeys: nil,
             options: [.skipsHiddenFiles]
-        ) else { return [] }
-        var out: [URL] = []
-        for case let url as URL in enumerator
-            where url.pathExtension.lowercased() == "epub" {
-            out.append(url)
+        ) else { return ([], []) }
+        var epubs: [URL] = []
+        var pdfs: [URL] = []
+        for case let url as URL in enumerator {
+            switch url.pathExtension.lowercased() {
+            case "epub": epubs.append(url)
+            case "pdf":  pdfs.append(url)
+            default:     continue
+            }
         }
-        return out
+        return (epubs, pdfs)
     }
 }

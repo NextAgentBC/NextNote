@@ -15,8 +15,19 @@ struct EPUBReaderHost: View {
 
     var body: some View {
         if let book = books.first {
-            EPUBReaderView(book: book)
-                .id(book.id)
+            switch book.kind {
+            case .epub:
+                EPUBReaderView(book: book)
+                    .id(book.id)
+            case .pdf:
+                #if os(macOS)
+                PDFReaderView(book: book)
+                    .id(book.id)
+                #else
+                EPUBReaderView(book: book)
+                    .id(book.id)
+                #endif
+            }
         } else {
             VStack(spacing: 12) {
                 Image(systemName: "book.closed")
