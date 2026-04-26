@@ -41,6 +41,17 @@ enum LibraryAutoClean {
             onStatus(.progress(idx: i + 1, total: total,
                                message: "\(progressPrefix) Analyzing \(track.title)…"))
 
+            // Idempotent skip: file is already at
+            //   <root>/<Artist>/<Artist> - <Song>.<ext>
+            // with no [videoId] tail, so re-running gives the same path.
+            // Save the cleanAndClassify call and the move attempt.
+            if Self.isCanonical(track.url, under: root) {
+                skipped += 1
+                onStatus(.progress(idx: i + 1, total: total,
+                                   message: "\(progressPrefix) = \(track.title) (already canonical)"))
+                continue
+            }
+
             let rawStem = track.url.deletingPathExtension().lastPathComponent
             let videoID = YTDLPMetadataBackfill.extractVideoID(from: track.url)
 
@@ -67,8 +78,12 @@ enum LibraryAutoClean {
                 let cleanArtist = MediaCategorizer.sanitize(rawArtist)
                 let cleanSong = MediaCategorizer.sanitize(rawSong)
 
-                var newBase = "\(cleanArtist) - \(cleanSong)"
-                if let vid = videoID { newBase += " [\(vid)]" }
+                // Drop yt-dlp [videoId] from the canonical filename so
+                // re-running Auto-Clean doesn't keep producing different
+                // names. videoID is captured above for any downstream
+                // workflows that still need it (none currently).
+                _ = videoID
+                let newBase = "\(cleanArtist) - \(cleanSong)"
 
                 let ext = track.url.pathExtension
                 let newFilename = ext.isEmpty ? newBase : "\(newBase).\(ext)"
@@ -112,6 +127,27 @@ enum LibraryAutoClean {
     }
 
     // MARK: - Helpers
+
+    /// True iff the file already lives at
+    ///   `<root>/<Artist>/<Artist> - <Song>.<ext>`
+    /// with no `[videoId]` tail. Used as a fast skip-path so re-running
+    /// Auto-Clean on a tidy library is a no-op instead of re-parsing
+    /// every track.
+    static func isCanonical(_ url: URL, under root: URL) -> Bool {
+        let parent = url.deletingLastPathComponent()
+        guard parent.deletingLastPathComponent().standardizedFileURL.path
+            == root.standardizedFileURL.path else { return false }
+        let artistFolder = parent.lastPathComponent
+        let stem = url.deletingPathExtension().lastPathComponent
+        // Must start with "<artistFolder> - "
+        let prefix = "\(artistFolder) - "
+        guard stem.hasPrefix(prefix), stem.count > prefix.count else { return false }
+        // Reject yt-dlp [videoId] tail.
+        if stem.range(of: #"\s*\[[A-Za-z0-9_-]{11}\]\s*$"#, options: .regularExpression) != nil {
+            return false
+        }
+        return true
+    }
 
     /// Normalize "A, B, C" collabs to "A & B & C" so each unique pairing
     /// gets its own folder instead of a separate folder per comma order.

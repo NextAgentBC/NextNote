@@ -17,8 +17,16 @@ enum TidyMediaPrompt {
 
         Goal layout: <root>/<Artist>/<Artist> - <Song>.<ext>
 
+        Idempotent: this command may be re-run as the library grows. Files
+        already at the goal layout MUST be left alone — don't propose any
+        moves for them. Only files that don't match get rewritten.
+
         Rules:
         1. Walk every audio + video file under the root recursively.
+        0. Skip any file whose path already matches the goal layout
+           (parent dir = artist, filename starts with "<artist> - ", no
+           [videoId] suffix). Don't print these in the plan; just count
+           them at the end as "N already canonical".
         2. Parse each filename into (artist, song). Patterns to handle:
            - "Artist - Song", "Artist – Song", "Artist — Song", "Artist | Song"
            - Strip trailing yt-dlp video id like " [dQw4w9WgXcQ]"
