@@ -28,3 +28,13 @@ enum NextNoteSchemaV3: VersionedSchema {
         [TextDocument.self, Note.self, Book.self, BookHighlight.self]
     }
 }
+
+// V4: adds DownloadJob — persistent YouTube download history so jobs
+// can resume after crash / quit and the user can browse / retry / clean
+// up old downloads.
+enum NextNoteSchemaV4: VersionedSchema {
+    static let versionIdentifier = Schema.Version(4, 0, 0)
+    static var models: [any PersistentModel.Type] {
+        [TextDocument.self, Note.self, Book.self, BookHighlight.self, DownloadJob.self]
+    }
+}

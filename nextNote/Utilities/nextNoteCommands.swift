@@ -192,6 +192,12 @@ struct NextNoteCommands: Commands {
             Button("Download from YouTube…") {
                 appState.showYouTubeDownload = true
             }
+            .keyboardShortcut("y", modifiers: [.command, .shift])
+
+            Button("Download History…") {
+                appState.showDownloadHistory = true
+            }
+            .keyboardShortcut("h", modifiers: [.command, .shift])
         }
 
     }

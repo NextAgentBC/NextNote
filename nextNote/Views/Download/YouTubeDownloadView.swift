@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 import AppKit
 
 /// Sheet for pulling a YouTube URL via yt-dlp. On audio success, auto-adds
@@ -8,6 +9,7 @@ import AppKit
 /// results, and download flow live in adjacent extension files.
 struct YouTubeDownloadView: View {
     @Environment(\.dismiss) var dismiss
+    @Environment(\.modelContext) var modelContext
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var libraryRoots: LibraryRoots
     @StateObject var locator = YTDLPLocator.shared

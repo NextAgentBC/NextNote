@@ -18,6 +18,7 @@ final class AppState: ObservableObject {
     @Published var previewMode: PreviewMode = .editor
     @Published var showMediaLibrary: Bool = false
     @Published var showYouTubeDownload: Bool = false
+    @Published var showDownloadHistory: Bool = false
     @Published var showAssetLibrary: Bool = false
     @Published var showTerminal: Bool = UserDefaults.standard.bool(forKey: "nextnote.terminal.show") {
         didSet { UserDefaults.standard.set(showTerminal, forKey: "nextnote.terminal.show") }

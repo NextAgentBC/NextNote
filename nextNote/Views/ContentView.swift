@@ -124,6 +124,13 @@ struct ContentView: View {
         .sheet(isPresented: $appState.showYouTubeDownload) {
             YouTubeDownloadView()
         }
+        // YouTube download history — submitted jobs run in background,
+        // user watches progress + retries / cancels here.
+        .sheet(isPresented: $appState.showDownloadHistory) {
+            DownloadHistoryView()
+                .environmentObject(appState)
+                .environmentObject(libraryRoots)
+        }
         // Asset Library sheet — grid browser for the fourth library root
         // (images / video / audio). Cells are draggable onto the markdown
         // editor, which turns the drop into `![](…)` syntax.
