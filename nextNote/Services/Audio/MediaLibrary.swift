@@ -131,7 +131,7 @@ final class MediaLibrary: ObservableObject {
     func scanAmbientFolder() async {
         guard let root = ambientFolderURL else { return }
         _ = pruneMissing()
-        let found = Self.walkForMedia(root: root)
+        let found = MediaScanner.walkForMedia(root: root)
         // addFiles does its own dedupe-by-path.
         _ = addFiles(found)
     }
@@ -156,7 +156,7 @@ final class MediaLibrary: ObservableObject {
             removeTracks(ids: Set(missingUnderRoot.map { $0.id }))
         }
 
-        let found = Self.walkForMedia(root: root)
+        let found = MediaScanner.walkForMedia(root: root)
         _ = addFiles(found)
     }
 
@@ -170,7 +170,7 @@ final class MediaLibrary: ObservableObject {
         let filtered = tracks.filter { MediaKind.from(url: $0.url) == kind }
         var bucket: [String: [Track]] = [:]
         for t in filtered {
-            let folder = Self.firstLevelFolder(of: t.url, under: rootPath)
+            let folder = MediaScanner.firstLevelFolder(of: t.url, under: rootPath)
             bucket[folder, default: []].append(t)
         }
         let orderedKeys = bucket.keys.sorted { a, b in
@@ -190,33 +190,7 @@ final class MediaLibrary: ObservableObject {
     /// `<root>/邓紫棋/song.mp3` becomes `"邓紫棋"`. Files directly at the
     /// root (or outside it) get `""` so callers can render them under an
     /// "Uncategorized" heading.
-    private static func firstLevelFolder(of file: URL, under rootPath: String?) -> String {
-        guard let rootPath else { return "" }
-        let full = file.standardizedFileURL.path
-        guard full.hasPrefix(rootPath) else { return "" }
-        var rel = String(full.dropFirst(rootPath.count))
-        if rel.hasPrefix("/") { rel.removeFirst() }
-        let segments = rel.split(separator: "/", omittingEmptySubsequences: true)
-        if segments.count <= 1 { return "" }
-        return String(segments[0])
-    }
-
-    // Synchronous helper — FileManager.enumerator's NSEnumerator makeIterator
-    // is @preconcurrency-banned in async contexts under Swift 6 strict mode,
-    // so we do the walk non-async and hand back a plain array.
-    private nonisolated static func walkForMedia(root: URL) -> [URL] {
-        let fm = FileManager.default
-        var found: [URL] = []
-        guard let enumerator = fm.enumerator(
-            at: root,
-            includingPropertiesForKeys: [.isRegularFileKey],
-            options: [.skipsHiddenFiles, .skipsPackageDescendants]
-        ) else { return found }
-        for case let url as URL in enumerator {
-            if MediaKind.from(url: url) != nil { found.append(url) }
-        }
-        return found
-    }
+    // walkForMedia / firstLevelFolder live in MediaScanner.swift now.
 
     // MARK: - Track CRUD
 
@@ -245,7 +219,7 @@ final class MediaLibrary: ObservableObject {
         if url.startAccessingSecurityScopedResource() {
             scopedURLs.insert(url)
         }
-        let displayTitle = Self.buildDisplayTitle(
+        let displayTitle = TrackTitleFormatter.displayTitle(
             explicit: title,
             artist: artist,
             fallbackURL: url
@@ -259,34 +233,6 @@ final class MediaLibrary: ObservableObject {
         tracks.append(track)
         persistTracks()
         return track
-    }
-
-    /// "邓紫棋 — 光年之外" when both parts known; fall back progressively to
-    /// title-only, then to the cleaned-up filename.
-    private static func buildDisplayTitle(explicit: String?, artist: String?, fallbackURL: URL) -> String {
-        let clean = { (s: String?) -> String? in
-            guard let s = s?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty else { return nil }
-            return s
-        }
-        let t = clean(explicit)
-        let a = clean(artist)
-        if let a, let t { return "\(a) — \(t)" }
-        if let t { return t }
-        if let a { return a }
-        // Last-ditch: filename, but strip the " [videoId]" yt-dlp suffix so
-        // folder-scan imports of existing downloads still look readable.
-        let raw = fallbackURL.deletingPathExtension().lastPathComponent
-        return Self.stripYouTubeIDSuffix(raw)
-    }
-
-    private static func stripYouTubeIDSuffix(_ s: String) -> String {
-        // Matches a trailing " [xxxxxxxxxxx]" where the id is 11 chars of
-        // YouTube's base64-ish alphabet. Non-YT filenames pass through.
-        let pattern = #"\s*\[[A-Za-z0-9_-]{11}\]\s*$"#
-        if let range = s.range(of: pattern, options: .regularExpression) {
-            return String(s[..<range.lowerBound])
-        }
-        return s
     }
 
     /// Re-point an existing track at a new on-disk URL (e.g., after the
