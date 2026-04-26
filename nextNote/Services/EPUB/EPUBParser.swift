@@ -180,10 +180,15 @@ enum EPUBParser {
         let items = try opf.select("manifest > item")
         for item in items.array() {
             let id = (try? item.attr("id")) ?? ""
-            let href = (try? item.attr("href")) ?? ""
+            let rawHref = (try? item.attr("href")) ?? ""
             let mediaType = (try? item.attr("media-type")) ?? ""
             let props = (try? item.attr("properties")) ?? ""
-            guard !id.isEmpty, !href.isEmpty else { continue }
+            guard !id.isEmpty, !rawHref.isEmpty else { continue }
+            // URL-decode + collapse `..` so the spine.href format the
+            // sidebar matches against is independent of how the publisher
+            // wrote it in the OPF (with %20, with backslashes, etc).
+            let decoded = rawHref.removingPercentEncoding ?? rawHref
+            let href = (decoded as NSString).standardizingPath
             result[id] = EPUBManifestItem(
                 id: id,
                 href: href,
@@ -223,7 +228,8 @@ enum EPUBParser {
             ($0.properties ?? "").contains("nav")
         }) {
             let navURL = contentBase.appendingPathComponent(navItem.href)
-            if let nodes = parseNavXHTML(at: navURL), !nodes.isEmpty {
+            if let nodes = parseNavXHTML(at: navURL, contentBase: contentBase),
+               !nodes.isEmpty {
                 return nodes
             }
         }
@@ -233,7 +239,8 @@ enum EPUBParser {
            !tocID.isEmpty,
            let ncxItem = manifest[tocID] {
             let ncxURL = contentBase.appendingPathComponent(ncxItem.href)
-            if let nodes = parseNCX(at: ncxURL), !nodes.isEmpty {
+            if let nodes = parseNCX(at: ncxURL, contentBase: contentBase),
+               !nodes.isEmpty {
                 return nodes
             }
         }
@@ -241,7 +248,46 @@ enum EPUBParser {
         return []
     }
 
-    private static func parseNavXHTML(at url: URL) -> [EPUBTOCNode]? {
+    /// Resolve a TOC href to the same form spine uses: a path relative to
+    /// the OPF directory (`contentBase`). Hrefs in nav.xhtml / NCX are
+    /// relative to that file's own directory, which is often a subdir
+    /// (e.g. `OEBPS/Text/nav.xhtml`) — without this normalization, the
+    /// sidebar's lookup against spine.href silently fails for half the
+    /// EPUBs in the wild.
+    static func normalizeTOCHref(_ raw: String, sourceFile: URL, contentBase: URL) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return "" }
+        // Anchor-only references (`#section_id`) — leave alone, the reader
+        // treats these as same-chapter scrolls.
+        if trimmed.hasPrefix("#") { return trimmed }
+
+        // Strip and stash any fragment so we can rejoin after path resolution.
+        let parts = trimmed.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)
+        let rawPath = String(parts[0])
+        let fragment = parts.count > 1 ? "#\(parts[1])" : ""
+
+        let decoded = rawPath.removingPercentEncoding ?? rawPath
+
+        let sourceDir = sourceFile.deletingLastPathComponent().standardizedFileURL
+        let absolute = sourceDir.appendingPathComponent(decoded).standardizedFileURL
+
+        let basePath = contentBase.standardizedFileURL.path
+        let absPath = absolute.path
+
+        let relative: String
+        if absPath.hasPrefix(basePath + "/") {
+            relative = String(absPath.dropFirst(basePath.count + 1))
+        } else if absPath == basePath {
+            relative = ""
+        } else {
+            // Target is outside the OPF dir — fall back to last component
+            // so at least filename-based matching still has a chance.
+            relative = absolute.lastPathComponent
+        }
+        return relative + fragment
+    }
+
+    private static func parseNavXHTML(at url: URL, contentBase: URL) -> [EPUBTOCNode]? {
         guard let data = try? Data(contentsOf: url),
               let text = String(data: data, encoding: .utf8),
               let doc = try? SwiftSoup.parse(text)
@@ -254,19 +300,20 @@ enum EPUBParser {
         guard let rootNav = nav,
               let list = try? rootNav.select("ol, ul").first()
         else { return nil }
-        return parseNavList(list)
+        return parseNavList(list, sourceFile: url, contentBase: contentBase)
     }
 
-    private static func parseNavList(_ list: Element) -> [EPUBTOCNode] {
+    private static func parseNavList(_ list: Element, sourceFile: URL, contentBase: URL) -> [EPUBTOCNode] {
         var result: [EPUBTOCNode] = []
         let items = (try? list.children()) ?? Elements()
         for li in items.array() where li.tagName() == "li" {
             guard let a = try? li.select("a, span").first() else { continue }
             let title = (try? a.text()) ?? ""
-            let href = (try? a.attr("href")) ?? ""
+            let rawHref = (try? a.attr("href")) ?? ""
+            let href = normalizeTOCHref(rawHref, sourceFile: sourceFile, contentBase: contentBase)
             var children: [EPUBTOCNode] = []
             if let sub = try? li.select("> ol, > ul").first() {
-                children = parseNavList(sub)
+                children = parseNavList(sub, sourceFile: sourceFile, contentBase: contentBase)
             }
             result.append(EPUBTOCNode(
                 title: title.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -277,22 +324,23 @@ enum EPUBParser {
         return result
     }
 
-    private static func parseNCX(at url: URL) -> [EPUBTOCNode]? {
+    private static func parseNCX(at url: URL, contentBase: URL) -> [EPUBTOCNode]? {
         guard let data = try? Data(contentsOf: url),
               let text = String(data: data, encoding: .utf8),
               let doc = try? SwiftSoup.parse(text, "", Parser.xmlParser())
         else { return nil }
         guard let navMap = try? doc.select("navMap").first() else { return nil }
-        return parseNCXPoints(in: navMap)
+        return parseNCXPoints(in: navMap, sourceFile: url, contentBase: contentBase)
     }
 
-    private static func parseNCXPoints(in parent: Element) -> [EPUBTOCNode] {
+    private static func parseNCXPoints(in parent: Element, sourceFile: URL, contentBase: URL) -> [EPUBTOCNode] {
         var result: [EPUBTOCNode] = []
         let points = (try? parent.children()) ?? Elements()
         for p in points.array() where p.tagName() == "navPoint" {
             let title = (try? p.select("navLabel > text").first()?.text()) ?? ""
-            let href = (try? p.select("content").first()?.attr("src")) ?? ""
-            let children = parseNCXPoints(in: p)
+            let rawHref = (try? p.select("content").first()?.attr("src")) ?? ""
+            let href = normalizeTOCHref(rawHref, sourceFile: sourceFile, contentBase: contentBase)
+            let children = parseNCXPoints(in: p, sourceFile: sourceFile, contentBase: contentBase)
             result.append(EPUBTOCNode(
                 title: title.trimmingCharacters(in: .whitespacesAndNewlines),
                 href: href,
