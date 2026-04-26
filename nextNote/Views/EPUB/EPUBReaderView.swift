@@ -57,25 +57,10 @@ struct EPUBReaderView: View {
                 errorState(error)
             } else if let chapterURL = currentChapterURL,
                       let root = unzipRoot {
-                HStack(spacing: 0) {
-                    if showTOC {
-                        EPUBTOCDrawer(
-                            toc: toc,
-                            spine: spine,
-                            currentSpineIndex: currentIndex,
-                            onJump: { idx, anchor in
-                                jumpToSpine(idx, anchor: anchor)
-                            },
-                            onClose: { withAnimation(.easeInOut(duration: 0.15)) { showTOC = false } }
-                        )
-                        .frame(width: 260)
-                        .transition(.move(edge: .leading))
-                        Divider()
-                    }
-                    VStack(spacing: 0) {
-                        readerToolbar
-                        Divider()
-                        EPUBContentWebView(
+                VStack(spacing: 0) {
+                    readerToolbar
+                    Divider()
+                    EPUBContentWebView(
                         chapterURL: chapterURL,
                         readAccessRoot: root,
                         fontSize: book.fontSize,
@@ -102,7 +87,6 @@ struct EPUBReaderView: View {
                     #endif
                     Divider()
                     bottomBar
-                    }
                 }
             } else {
                 ProgressView("Loading…")
@@ -147,11 +131,14 @@ struct EPUBReaderView: View {
             var decodedTOC = (try? JSONDecoder().decode([BookTOCEntry].self, from: book.tocJSON)) ?? []
             var decodedSpine = (try? JSONDecoder().decode([BookSpineEntry].self, from: book.spineJSON)) ?? []
 
-            // Recover from imports that landed an empty TOC — re-parse from
-            // the unzipped EPUB now that the file is on disk. Books in the
-            // library before TOC parsing was robust will pick up real
-            // chapter titles the first time they're opened.
-            if decodedTOC.isEmpty || decodedSpine.isEmpty {
+            // Recover from imports that landed an empty TOC OR a TOC
+            // saved before spineIndex resolution shipped — re-parse from
+            // the unzipped EPUB so chapter jumps work without manual
+            // "Refresh Table of Contents" action.
+            let needsRefresh = decodedTOC.isEmpty
+                || decodedSpine.isEmpty
+                || !Self.tocHasResolvedIndex(decodedTOC)
+            if needsRefresh {
                 _ = EPUBImporter.refreshMetadata(book, vault: vault)
                 decodedTOC = (try? JSONDecoder().decode([BookTOCEntry].self, from: book.tocJSON)) ?? []
                 decodedSpine = (try? JSONDecoder().decode([BookSpineEntry].self, from: book.spineJSON)) ?? []
@@ -177,13 +164,26 @@ struct EPUBReaderView: View {
     private var readerToolbar: some View {
         HStack(spacing: 12) {
             Button {
-                withAnimation(.easeInOut(duration: 0.15)) { showTOC.toggle() }
+                showTOC.toggle()
             } label: {
-                Image(systemName: showTOC ? "sidebar.left" : "list.bullet.rectangle")
+                Image(systemName: "list.bullet.rectangle")
                     .accessibilityLabel("Table of Contents")
             }
             .help("Table of Contents (⌘⇧T)")
             .keyboardShortcut("t", modifiers: [.command, .shift])
+            .popover(isPresented: $showTOC, arrowEdge: .top) {
+                EPUBTOCDrawer(
+                    toc: toc,
+                    spine: spine,
+                    currentSpineIndex: currentIndex,
+                    onJump: { idx, anchor in
+                        jumpToSpine(idx, anchor: anchor)
+                        showTOC = false
+                    },
+                    onClose: { showTOC = false }
+                )
+                .frame(width: 320, height: 480)
+            }
 
             // Title is shown in the window chrome — no need to duplicate
             // it here. Leave the leading edge clean for toolbar controls.
@@ -327,6 +327,18 @@ struct EPUBReaderView: View {
     private func goToChapter(_ idx: Int) {
         pendingAnchor = nil
         setChapter(idx)
+    }
+
+    /// True iff at least one TOC entry (recursively) has a resolved
+    /// `spineIndex`. Books imported before spineIndex resolution shipped
+    /// have all-nil values; that's the trigger for an auto-refresh on
+    /// open so the user doesn't see a TOC where every row is greyed out.
+    private static func tocHasResolvedIndex(_ entries: [BookTOCEntry]) -> Bool {
+        for e in entries {
+            if e.spineIndex != nil { return true }
+            if tocHasResolvedIndex(e.children) { return true }
+        }
+        return false
     }
 
     /// TOC drawer click handler — pre-resolved spine index makes this a
