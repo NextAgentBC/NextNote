@@ -25,7 +25,7 @@ final class EmbeddingPipeline: ObservableObject {
         book.documentID = documentID
         NSLog("[Embed] '\(title)' doc id %@", documentID.uuidString)
 
-        let batchSize = 8
+        let batchSize = 1
         var embeddedChunks: [(idx: Int, content: String, embedding: [Float], tokenCount: Int)] = []
 
         for batchStart in stride(from: 0, to: chunks.count, by: batchSize) {

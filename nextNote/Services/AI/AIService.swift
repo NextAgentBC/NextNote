@@ -165,6 +165,9 @@ final class AIService: ObservableObject {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        // iGPU prefill on Qwen3-Embed-8B can take ~60s per 12k-tok request.
+        // Default 60s URLSession timeout cuts long chunks short.
+        request.timeoutInterval = 180
 
         if let key = settings.apiKey(for: provider), !key.isEmpty {
             request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")

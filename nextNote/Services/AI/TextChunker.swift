@@ -8,12 +8,13 @@ struct TextChunker {
     }
 
     static func chunk(book: Book, chapterTexts: [String]) -> [Chunk] {
-        // llama.cpp embedding servers commonly run with -c 2048 even when
-        // the model itself supports 40k+. Cap chunks at ~1500 tokens
-        // (~6000 chars) with 600-char overlap to stay safely under 2048
-        // tokens per request regardless of server config.
-        let windowSize = 6000
-        let overlap = 600
+        // Server runs with -c 40960 -np 1 (single slot, full 40k ctx). Per-chunk
+        // prefill on iGPU is ~210ms/token, so 2000 tokens ≈ 10s. Larger chunks
+        // would push request time past the URLSession timeout for marginal
+        // retrieval gain. 8000 chars = ~2000 tokens balances speed and
+        // semantic coherence per chunk.
+        let windowSize = 8000
+        let overlap = 800
         var out: [Chunk] = []
         var chunkIdx = 0
         for text in chapterTexts {
