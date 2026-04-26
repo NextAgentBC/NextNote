@@ -36,6 +36,11 @@ final class Book {
     /// AI-suggested folder name. Nil until categorized.
     var suggestedFolder: String?
 
+    /// JSON-encoded BookMetadataSuggestion (title/author/summary). SwiftData
+    /// can't store the struct directly, so we keep raw Data and expose a
+    /// computed accessor.
+    var aiSuggestionData: Data?
+
     /// FK to Postgres documents.id in the vector DB. Set after embedding succeeds.
     var documentID: UUID?
 
@@ -84,6 +89,16 @@ final class Book {
     var embeddingStatus: EmbeddingStatus {
         get { EmbeddingStatus(rawValue: embeddingStatusRaw) ?? .pending }
         set { embeddingStatusRaw = newValue.rawValue }
+    }
+
+    var aiSuggestion: BookMetadataSuggestion? {
+        get {
+            guard let d = aiSuggestionData else { return nil }
+            return try? JSONDecoder().decode(BookMetadataSuggestion.self, from: d)
+        }
+        set {
+            aiSuggestionData = newValue.flatMap { try? JSONEncoder().encode($0) }
+        }
     }
 
 }

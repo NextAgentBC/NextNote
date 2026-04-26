@@ -3,6 +3,23 @@ import Combine
 
 @MainActor
 final class AppState: ObservableObject {
+    // MARK: - AI
+    let aiService: AIService = AIService()
+
+    // MARK: - Vector DB
+    let vectorStore: VectorStore = {
+        let dsn = VectorDBSettings.shared.dsn
+        return VectorStore(dsn: dsn)
+    }()
+
+    lazy var embeddingPipeline: EmbeddingPipeline = {
+        EmbeddingPipeline(ai: aiService, store: vectorStore)
+    }()
+
+    lazy var semanticSearch: SemanticSearchService = {
+        SemanticSearchService(ai: aiService, store: vectorStore)
+    }()
+
     // MARK: - Tab Management
     @Published var openTabs: [TabItem] = []
     @Published var activeTabId: UUID?
