@@ -166,6 +166,48 @@ enum EbookLibraryActions {
         try? modelContext.save()
     }
 
+    /// Walk the Ebooks root and patch every Book whose `relativePath`
+    /// no longer points to a real file. If the file's lastPathComponent
+    /// can be located uniquely under the root, the model picks up the
+    /// new path — covers the case where the user moved a file in Finder,
+    /// or where a previous drag-drop got us into a half-synced state.
+    @discardableResult
+    static func reconcile(
+        books: [Book],
+        under root: URL,
+        vault: VaultStore,
+        modelContext: ModelContext
+    ) -> Int {
+        var index: [String: [URL]] = [:]
+        let fm = FileManager.default
+        if let walker = fm.enumerator(
+            at: root,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) {
+            for case let url as URL in walker {
+                let isFile = (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) ?? false
+                guard isFile else { continue }
+                index[url.lastPathComponent, default: []].append(url)
+            }
+        }
+
+        var fixed = 0
+        for book in books {
+            guard let oldURL = EPUBImporter.resolveFileURL(book.relativePath, vault: vault) else { continue }
+            if fm.fileExists(atPath: oldURL.path) { continue }
+            let candidates = index[oldURL.lastPathComponent] ?? []
+            // Only auto-relocate when we find exactly one match — multi-
+            // match means there are duplicates and we can't tell which
+            // belongs to this Book record.
+            guard candidates.count == 1, let match = candidates.first else { continue }
+            book.relativePath = vault.relativePath(for: match) ?? match.lastPathComponent
+            fixed += 1
+        }
+        if fixed > 0 { try? modelContext.save() }
+        return fixed
+    }
+
     /// First-level subfolders under the Ebooks root, even when empty.
     /// Sorted case-insensitive so the sidebar order matches Finder.
     static func discoverFolders(under root: URL) -> [String] {

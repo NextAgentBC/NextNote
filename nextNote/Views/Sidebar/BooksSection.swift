@@ -43,9 +43,11 @@ struct BooksSection: View {
         }
         .task {
             refreshDiskFolders()
+            reconcileBookPaths()
         }
         .onReceive(libraryRoots.$ebooksRoot) { _ in
             refreshDiskFolders()
+            reconcileBookPaths()
         }
         .alert("New Ebooks Folder", isPresented: $showNewFolderAlert) {
             TextField("Name", text: $newFolderName)
@@ -382,6 +384,20 @@ struct BooksSection: View {
             return
         }
         diskFolders = EbookLibraryActions.discoverFolders(under: root)
+    }
+
+    /// Sync stale Book.relativePath entries with the actual on-disk
+    /// location. Cheap walk of the ebooks tree on every appear / root
+    /// change — keeps the sidebar in sync when files were moved out-of-
+    /// band (Finder, half-synced drag-drops from earlier builds).
+    private func reconcileBookPaths() {
+        guard let root = libraryRoots.ebooksRoot else { return }
+        _ = EbookLibraryActions.reconcile(
+            books: books,
+            under: root,
+            vault: vaultEnv,
+            modelContext: modelContext
+        )
     }
 }
 
