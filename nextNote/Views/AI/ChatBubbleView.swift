@@ -8,22 +8,45 @@ struct ChatBubbleView: View {
         HStack(alignment: .bottom, spacing: 0) {
             if message.role == .user { Spacer(minLength: 60) }
 
-            VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 0) {
-                if message.role == .assistant && message.content.isEmpty && isStreaming {
+            VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 4) {
+                if message.role == .assistant && message.content.isEmpty && message.reasoning.isEmpty && isStreaming {
                     TypingIndicator()
                         .padding(.horizontal, 12)
                         .padding(.vertical, 10)
                         .background(Color.secondary.opacity(0.12), in: bubbleShape)
                 } else {
-                    Text(.init(message.content))
-                        .textSelection(.enabled)
-                        .font(.system(size: 13))
-                        .foregroundStyle(message.role == .user ? .white : .primary)
+                    if message.role == .assistant && !message.reasoning.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            if message.content.isEmpty && isStreaming {
+                                HStack(spacing: 4) {
+                                    TypingIndicator()
+                                    Text("thinking…")
+                                        .font(.caption2)
+                                        .foregroundStyle(.tertiary)
+                                }
+                            }
+                            Text("💭 " + message.reasoning)
+                                .font(.caption2)
+                                .italic()
+                                .foregroundStyle(.secondary)
+                                .lineLimit(3)
+                                .truncationMode(.tail)
+                        }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
-                        .background(
-                            bubbleShape.fill(message.role == .user ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(Color.secondary.opacity(0.12)))
-                        )
+                        .background(Color.secondary.opacity(0.07), in: bubbleShape)
+                    }
+                    if !message.content.isEmpty {
+                        Text(.init(message.content))
+                            .textSelection(.enabled)
+                            .font(.system(size: 13))
+                            .foregroundStyle(message.role == .user ? .white : .primary)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(
+                                bubbleShape.fill(message.role == .user ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(Color.secondary.opacity(0.12)))
+                            )
+                    }
                 }
             }
             .frame(maxWidth: 280, alignment: message.role == .user ? .trailing : .leading)

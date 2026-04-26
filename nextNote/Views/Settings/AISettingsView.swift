@@ -44,20 +44,18 @@ struct AISettingsView: View {
                 }
             }
 
-            if settings.activeProvider.requiresAPIKey {
-                Section("API Key") {
-                    SecureField("API Key", text: $apiKeyInput)
-                        .onAppear {
-                            apiKeyInput = settings.apiKey(for: settings.activeProvider) ?? ""
-                        }
-                        .onChange(of: settings.activeProvider) { _, newProvider in
-                            apiKeyInput = settings.apiKey(for: newProvider) ?? ""
-                        }
-                    Button("Save Key") {
-                        settings.setAPIKey(apiKeyInput, for: settings.activeProvider)
+            Section(settings.activeProvider.requiresAPIKey ? "API Key" : "API Key (optional)") {
+                SecureField("API Key", text: $apiKeyInput)
+                    .onAppear {
+                        apiKeyInput = settings.apiKey(for: settings.activeProvider) ?? ""
                     }
-                    .disabled(apiKeyInput.isEmpty)
+                    .onChange(of: settings.activeProvider) { _, newProvider in
+                        apiKeyInput = settings.apiKey(for: newProvider) ?? ""
+                    }
+                Button("Save Key") {
+                    settings.setAPIKey(apiKeyInput, for: settings.activeProvider)
                 }
+                .disabled(apiKeyInput.isEmpty)
             }
 
             Section("Connection") {

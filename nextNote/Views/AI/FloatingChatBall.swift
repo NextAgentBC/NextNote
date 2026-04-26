@@ -105,6 +105,9 @@ struct FloatingChatBall: View {
             .onChange(of: messages.last?.content) {
                 withAnimation { proxy.scrollTo("bottom") }
             }
+            .onChange(of: messages.last?.reasoning) {
+                withAnimation { proxy.scrollTo("bottom") }
+            }
             .onChange(of: messages.count) {
                 withAnimation { proxy.scrollTo("bottom") }
             }
@@ -164,8 +167,13 @@ struct FloatingChatBall: View {
         streamTask = Task { @MainActor in
             let stream = appState.aiService.chat(messages: context, stream: true)
             do {
-                for try await token in stream {
-                    messages[assistantIndex].content += token
+                for try await event in stream {
+                    switch event {
+                    case .reasoning(let token):
+                        messages[assistantIndex].reasoning += token
+                    case .content(let token):
+                        messages[assistantIndex].content += token
+                    }
                 }
             } catch {
                 messages[assistantIndex].content = "⚠️ \(error.localizedDescription)"

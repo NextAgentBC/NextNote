@@ -26,7 +26,7 @@ struct AIProvider: Codable, Identifiable, Hashable {
         embedBaseURL: URL(string: "http://100.79.97.110:8081")!,
         embedModel: "qwen3-embed-8b",
         vectorDSN: "postgresql://hermes:hermes_memory_2026@100.79.97.110:5433/hermes_memory",
-        requiresAPIKey: false
+        requiresAPIKey: true
     )
 
     static let openAI = AIProvider(

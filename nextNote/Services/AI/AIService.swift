@@ -1,6 +1,11 @@
 import Foundation
 import Combine
 
+enum ChatStreamEvent: Sendable {
+    case reasoning(String)
+    case content(String)
+}
+
 enum AIError: LocalizedError {
     case unreachable
     case badResponse(Int)
@@ -38,7 +43,7 @@ final class AIService: ObservableObject {
 
     // MARK: - Chat (SSE streaming)
 
-    func chat(messages: [ChatMessage], stream: Bool = true) -> AsyncThrowingStream<String, Error> {
+    func chat(messages: [ChatMessage], stream: Bool = true) -> AsyncThrowingStream<ChatStreamEvent, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 do {
@@ -53,13 +58,11 @@ final class AIService: ObservableObject {
                     request.httpMethod = "POST"
                     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-                    if provider.requiresAPIKey {
-                        let key = self.settings.apiKey(for: provider)
-                        guard let key else {
-                            continuation.finish(throwing: AIError.missingAPIKey)
-                            return
-                        }
+                    if let key = self.settings.apiKey(for: provider), !key.isEmpty {
                         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+                    } else if provider.requiresAPIKey {
+                        continuation.finish(throwing: AIError.missingAPIKey)
+                        return
                     }
 
                     let body = ChatCompletionRequest(
@@ -99,8 +102,13 @@ final class AIService: ObservableObject {
                                     }
                                     if let data = payload.data(using: .utf8),
                                        let sseChunk = try? JSONDecoder().decode(SSEChunk.self, from: data),
-                                       let content = sseChunk.choices.first?.delta.content {
-                                        continuation.yield(content)
+                                       let delta = sseChunk.choices.first?.delta {
+                                        if let reasoning = delta.reasoningContent, !reasoning.isEmpty {
+                                            continuation.yield(.reasoning(reasoning))
+                                        }
+                                        if let content = delta.content, !content.isEmpty {
+                                            continuation.yield(.content(content))
+                                        }
                                     }
                                 }
                             }
@@ -121,7 +129,7 @@ final class AIService: ObservableObject {
                             continuation.finish(throwing: AIError.decoding)
                             return
                         }
-                        continuation.yield(content)
+                        continuation.yield(.content(content))
                         continuation.finish()
                     }
                 } catch {
@@ -141,8 +149,8 @@ final class AIService: ObservableObject {
         messages.append(ChatMessage(role: .user, content: prompt))
 
         var result = ""
-        for try await chunk in chat(messages: messages, stream: false) {
-            result += chunk
+        for try await event in chat(messages: messages, stream: false) {
+            if case .content(let token) = event { result += token }
         }
         return result
     }
@@ -158,10 +166,10 @@ final class AIService: ObservableObject {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        if provider.requiresAPIKey {
-            let key = settings.apiKey(for: provider)
-            guard let key else { throw AIError.missingAPIKey }
+        if let key = settings.apiKey(for: provider), !key.isEmpty {
             request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        } else if provider.requiresAPIKey {
+            throw AIError.missingAPIKey
         }
 
         let body = EmbeddingRequest(model: provider.embedModel, input: texts)
@@ -222,11 +230,8 @@ final class AIService: ObservableObject {
         var request = URLRequest(url: url)
         request.timeoutInterval = 5
 
-        if provider.requiresAPIKey {
-            let key = settings.apiKey(for: provider)
-            if let key {
-                request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
-            }
+        if let key = settings.apiKey(for: provider), !key.isEmpty {
+            request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         }
 
         do {
@@ -245,11 +250,8 @@ final class AIService: ObservableObject {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 5
 
-        if provider.requiresAPIKey {
-            let key = settings.apiKey(for: provider)
-            if let key {
-                request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
-            }
+        if let key = settings.apiKey(for: provider), !key.isEmpty {
+            request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         }
 
         let body = EmbeddingRequest(model: provider.embedModel, input: ["ping"])
@@ -283,6 +285,12 @@ private struct SSEChunk: Decodable {
     struct Choice: Decodable {
         struct Delta: Decodable {
             let content: String?
+            let reasoningContent: String?
+
+            enum CodingKeys: String, CodingKey {
+                case content
+                case reasoningContent = "reasoning_content"
+            }
         }
         let delta: Delta
     }
