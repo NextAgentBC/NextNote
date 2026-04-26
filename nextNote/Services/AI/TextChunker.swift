@@ -8,31 +8,32 @@ struct TextChunker {
     }
 
     static func chunk(book: Book, chapterTexts: [String]) -> [Chunk] {
+        // llama.cpp embedding servers commonly run with -c 2048 even when
+        // the model itself supports 40k+. Cap chunks at ~1500 tokens
+        // (~6000 chars) with 600-char overlap to stay safely under 2048
+        // tokens per request regardless of server config.
+        let windowSize = 6000
+        let overlap = 600
         var out: [Chunk] = []
         var chunkIdx = 0
         for text in chapterTexts {
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard trimmed.count >= 50 else { continue }
-            let tokenCount = trimmed.count / 4
-            // Each spine entry becomes one chunk if under ~120k chars (~30k tokens).
-            // For oversize entries split into 120k-char windows with 10k overlap.
-            if trimmed.count <= 120_000 {
-                out.append(Chunk(index: chunkIdx, content: trimmed, tokenCount: tokenCount))
+            if trimmed.count <= windowSize {
+                out.append(Chunk(index: chunkIdx, content: trimmed, tokenCount: trimmed.count / 4))
                 chunkIdx += 1
-            } else {
-                let windowSize = 120_000
-                let overlap = 10_000
-                var start = trimmed.startIndex
-                while start < trimmed.endIndex {
-                    let end = trimmed.index(start, offsetBy: windowSize, limitedBy: trimmed.endIndex) ?? trimmed.endIndex
-                    let slice = String(trimmed[start..<end]).trimmingCharacters(in: .whitespacesAndNewlines)
-                    if slice.count >= 50 {
-                        out.append(Chunk(index: chunkIdx, content: slice, tokenCount: slice.count / 4))
-                        chunkIdx += 1
-                    }
-                    if end == trimmed.endIndex { break }
-                    start = trimmed.index(start, offsetBy: windowSize - overlap, limitedBy: trimmed.endIndex) ?? trimmed.endIndex
+                continue
+            }
+            var start = trimmed.startIndex
+            while start < trimmed.endIndex {
+                let end = trimmed.index(start, offsetBy: windowSize, limitedBy: trimmed.endIndex) ?? trimmed.endIndex
+                let slice = String(trimmed[start..<end]).trimmingCharacters(in: .whitespacesAndNewlines)
+                if slice.count >= 50 {
+                    out.append(Chunk(index: chunkIdx, content: slice, tokenCount: slice.count / 4))
+                    chunkIdx += 1
                 }
+                if end == trimmed.endIndex { break }
+                start = trimmed.index(start, offsetBy: windowSize - overlap, limitedBy: trimmed.endIndex) ?? trimmed.endIndex
             }
         }
         return out

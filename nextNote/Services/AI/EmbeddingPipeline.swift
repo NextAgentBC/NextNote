@@ -12,18 +12,20 @@ final class EmbeddingPipeline: ObservableObject {
     }
 
     func embed(book: Book, chapterTexts: [String]) async throws {
+        let title = book.title
         let chunks = TextChunker.chunk(book: book, chapterTexts: chapterTexts)
+        NSLog("[Embed] '\(title)': %d chapters → %d chunks", chapterTexts.count, chunks.count)
         guard !chunks.isEmpty else {
             book.embeddingStatus = .embedded
             return
         }
 
-        // Extract all values from Book on MainActor before crossing actor boundaries.
         let bookSnapshot = BookSnapshot(book: book)
         let documentID = try await store.upsertDocument(snapshot: bookSnapshot)
         book.documentID = documentID
+        NSLog("[Embed] '\(title)' doc id %@", documentID.uuidString)
 
-        let batchSize = 16
+        let batchSize = 8
         var embeddedChunks: [(idx: Int, content: String, embedding: [Float], tokenCount: Int)] = []
 
         for batchStart in stride(from: 0, to: chunks.count, by: batchSize) {
@@ -35,8 +37,15 @@ final class EmbeddingPipeline: ObservableObject {
             do {
                 embeddings = try await ai.embed(texts)
             } catch {
-                embeddings = try await ai.embed(texts)
+                NSLog("[Embed] '\(title)' batch %d-%d FIRST attempt failed: %@", batchStart, batchEnd, String(describing: error))
+                do {
+                    embeddings = try await ai.embed(texts)
+                } catch {
+                    NSLog("[Embed] '\(title)' batch %d-%d RETRY failed: %@", batchStart, batchEnd, String(describing: error))
+                    throw error
+                }
             }
+            NSLog("[Embed] '\(title)' batch %d-%d: got %d vectors", batchStart, batchEnd, embeddings.count)
 
             for (i, chunk) in batch.enumerated() {
                 guard i < embeddings.count else { continue }
@@ -49,7 +58,13 @@ final class EmbeddingPipeline: ObservableObject {
             }
         }
 
-        try await store.insertChunks(documentID: documentID, chunks: embeddedChunks)
+        do {
+            try await store.insertChunks(documentID: documentID, chunks: embeddedChunks)
+            NSLog("[Embed] '\(title)' inserted %d chunks", embeddedChunks.count)
+        } catch {
+            NSLog("[Embed] '\(title)' insertChunks FAILED: %@", String(describing: error))
+            throw error
+        }
         book.embeddingStatus = .embedded
     }
 

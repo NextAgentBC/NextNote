@@ -216,12 +216,12 @@ actor VectorStore {
             if let filter {
                 let ct = filter.rawValue
                 rows = try await conn.query(
-                    "SELECT COUNT(*)::int4 FROM documents WHERE content_type = \(ct)",
+                    "SELECT COUNT(DISTINCT d.id)::int4 FROM documents d JOIN chunks c ON c.document_id = d.id WHERE d.content_type = \(ct)",
                     logger: self.logger
                 )
             } else {
                 rows = try await conn.query(
-                    "SELECT COUNT(*)::int4 FROM documents",
+                    "SELECT COUNT(DISTINCT document_id)::int4 FROM chunks",
                     logger: self.logger
                 )
             }
