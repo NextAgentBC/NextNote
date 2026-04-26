@@ -86,8 +86,19 @@ struct BooksSection: View {
     // MARK: - Header
 
     private var sectionHeader: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             Spacer()
+            Button {
+                tidyWithClaude()
+            } label: {
+                Image(systemName: "sparkles.tv")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Tidy with Claude — route loose books into existing folders")
+            .disabled(libraryRoots.ebooksRoot == nil)
+
             Button {
                 newFolderName = ""
                 showNewFolderAlert = true
@@ -101,6 +112,22 @@ struct BooksSection: View {
             .padding(.trailing, 10)
         }
         .padding(.vertical, 2)
+    }
+
+    /// Drop a pre-baked prompt into the embedded terminal so Claude CLI
+    /// can scan the ebooks root, propose a routing plan, and execute it
+    /// after explicit confirmation. Drag-drop in the sidebar is fragile
+    /// for the long-tail (file paths with non-ASCII characters, drag
+    /// session edge cases) — this is the reliable escape hatch.
+    private func tidyWithClaude() {
+        guard let root = libraryRoots.ebooksRoot else { return }
+        let prompt = TidyEbooksPrompt.build(rootPath: root.path)
+        appState.showTerminal = true
+        appState.pendingTerminalCommand = "claude " + shellEscape(prompt)
+    }
+
+    private func shellEscape(_ s: String) -> String {
+        "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
     // MARK: - Grouping
