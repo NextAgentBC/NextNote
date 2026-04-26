@@ -19,7 +19,7 @@ struct ContentView: View {
                 LibrarySetupView()
                     .environmentObject(libraryRoots)
             } else if appState.isFocusMode {
-                focusModeView
+                FocusModeView()
             } else {
                 mainLayout
             }
@@ -159,36 +159,13 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Save (vault-aware)
-    //
-    // Vault-backed tabs write their buffer to disk via NoteIO. Legacy flat-mode
-    // tabs persist via SwiftData. Both run on every save trigger — vault mode
-    // might still have a legacy TextDocument hanging around mid-transition.
     private func saveAll() {
-        // Legacy SwiftData save (keeps flat-mode working + any AI caches persisted)
-        try? modelContext.save()
-
-        // Vault-backed: write each open tab's buffer to its .md on disk.
-        // Media tabs reuse TextDocument as a placeholder carrier; writing
-        // that carrier back to disk would corrupt the binary file, so skip.
-        guard preferences.vaultMode else { return }
-        for (tabId, relativePath) in appState.vaultOpenPairs {
-            guard
-                let tab = appState.openTabs.first(where: { $0.id == tabId }),
-                tab.isModified,
-                let url = vault.url(for: relativePath),
-                MediaKind.from(url: url) == nil,
-                !VaultStore.imageExts.contains(url.pathExtension.lowercased())
-            else { continue }
-            do {
-                try NoteIO.write(url: url, content: tab.document.content)
-                if let idx = appState.openTabs.firstIndex(where: { $0.id == tabId }) {
-                    appState.openTabs[idx].isModified = false
-                }
-            } catch {
-                appState.lastSaveError = "Write failed for \(relativePath): \(error.localizedDescription)"
-            }
-        }
+        VaultSaveCoordinator.saveAll(
+            modelContext: modelContext,
+            vaultMode: preferences.vaultMode,
+            appState: appState,
+            vault: vault
+        )
     }
 
     // MARK: - File Import (MVP: copy content into SwiftData)
@@ -572,15 +549,8 @@ struct ContentView: View {
         }
     }
 
-    /// Resolve sidebar selection to a folder path ("" = vault root). Files
-    /// promote to their parent directory.
     private func targetFolderForNew() -> String {
-        let sel = appState.selectedSidebarPath
-        if sel.isEmpty { return "" }
-        if let node = Self.findNode(matching: sel, in: vault.tree) {
-            return node.isDirectory ? sel : (sel as NSString).deletingLastPathComponent
-        }
-        return ""
+        NewDocumentRouter.targetFolder(forSelection: appState.selectedSidebarPath, in: vault.tree)
     }
 
     /// Flush the outgoing session, load the incoming one. Only vault-backed
@@ -610,55 +580,7 @@ struct ContentView: View {
         )
     }
 
-    private static func findNode(matching path: String, in tree: FolderNode) -> FolderNode? {
-        if tree.relativePath == path { return tree }
-        for child in tree.children {
-            if child.relativePath == path { return child }
-            if let hit = findNode(matching: path, in: child) { return hit }
-        }
-        return nil
-    }
-
-    private var focusModeView: some View {
-        ZStack {
-            #if os(macOS)
-            Color(NSColor.textBackgroundColor).ignoresSafeArea()
-            #else
-            Color(UIColor.systemBackground).ignoresSafeArea()
-            #endif
-
-            if let tabIndex = appState.activeTabIndex {
-                EditorView(document: appState.openTabs[tabIndex].document)
-                    #if os(macOS)
-                    .padding(.horizontal, 80)
-                    .padding(.vertical, 40)
-                    #else
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    #endif
-            }
-
-            VStack {
-                Spacer()
-                HStack {
-                    Spacer()
-                    Button {
-                        withAnimation { appState.isFocusMode = false }
-                    } label: {
-                        Image(systemName: "arrow.down.right.and.arrow.up.left")
-                            .font(.system(size: 18))
-                            .padding(12)
-                            .background(.ultraThinMaterial, in: Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .padding()
-                    .opacity(0.6)
-                }
-            }
-        }
-    }
-
-    // MARK: - iOS Toolbar
+// MARK: - iOS Toolbar
 
     #if os(iOS)
     @ToolbarContentBuilder
@@ -817,285 +739,3 @@ struct ContentView: View {
     #endif
 }
 
-// MARK: - iOS AI Panel as Sheet
-
-#if os(iOS)
-struct AIActionPanelSheetView: View {
-    @EnvironmentObject private var appState: AppState
-    @ObservedObject private var aiService = AITextService.shared
-    @Binding var isPresented: Bool
-
-    @State private var selectedAction: AIAction = .polish
-    @State private var result: String = ""
-    @State private var isProcessing: Bool = false
-    @State private var targetLanguage: String = "English"
-    @State private var polishStyle: PolishStyle = .concise
-    @State private var summaryLength: SummaryLength = .medium
-
-    enum AIAction: String, CaseIterable, Identifiable {
-        case polish = "Polish"
-        case summarize = "Summarize"
-        case continueWriting = "Continue"
-        case translate = "Translate"
-        case grammar = "Grammar"
-        case simplify = "Simplify"
-
-        var id: String { rawValue }
-        var icon: String {
-            switch self {
-            case .polish: return "wand.and.stars"
-            case .summarize: return "text.redaction"
-            case .continueWriting: return "text.append"
-            case .translate: return "globe"
-            case .grammar: return "checkmark.circle"
-            case .simplify: return "arrow.triangle.branch"
-            }
-        }
-    }
-
-    private var currentText: String {
-        appState.activeTab?.document.content ?? ""
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            // Model status
-            if aiService.modelState != .ready {
-                HStack {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
-                    Text("AI model not downloaded. Go to Settings → AI to download.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.horizontal)
-                .padding(.vertical, 8)
-                .background(Color.orange.opacity(0.1))
-            }
-
-            // Action chips
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(AIAction.allCases) { action in
-                        Button {
-                            selectedAction = action
-                        } label: {
-                            Label(action.rawValue, systemImage: action.icon)
-                                .font(.system(size: 13))
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 8)
-                                .background(
-                                    selectedAction == action
-                                    ? Color.accentColor.opacity(0.15)
-                                    : Color(.secondarySystemBackground),
-                                    in: Capsule()
-                                )
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.horizontal)
-                .padding(.vertical, 10)
-            }
-
-            Divider()
-
-            // Options
-            iOSActionOptions
-                .padding(.horizontal)
-                .padding(.vertical, 8)
-
-            Divider()
-
-            // Result
-            if isProcessing {
-                HStack {
-                    ProgressView()
-                    Text("Processing...")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                .padding()
-            } else if !result.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text("Result")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Button("Copy") {
-                            UIPasteboard.general.string = result
-                        }
-                        .font(.caption)
-                        Button("Replace") {
-                            replaceContent()
-                        }
-                        .font(.caption)
-                        .buttonStyle(.borderedProminent)
-                    }
-                    ScrollView {
-                        Text(result)
-                            .font(.system(size: 14))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .textSelection(.enabled)
-                    }
-                }
-                .padding()
-            }
-
-            Spacer()
-
-            // Run button
-            HStack {
-                Text("\(currentText.count) chars")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button {
-                    Task { await executeAction() }
-                } label: {
-                    Label("Run AI", systemImage: "play.fill")
-                        .font(.headline)
-                        .padding(.horizontal, 24)
-                        .padding(.vertical, 10)
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(currentText.isEmpty || isProcessing || aiService.modelState != .ready)
-            }
-            .padding()
-        }
-        .navigationTitle("AI Assistant")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Close") { isPresented = false }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var iOSActionOptions: some View {
-        switch selectedAction {
-        case .polish:
-            Picker("Style", selection: $polishStyle) {
-                ForEach(PolishStyle.allCases, id: \.self) { s in
-                    Text(s.rawValue).tag(s)
-                }
-            }
-            .pickerStyle(.segmented)
-        case .summarize:
-            Picker("Length", selection: $summaryLength) {
-                Text("Brief").tag(SummaryLength.brief)
-                Text("Medium").tag(SummaryLength.medium)
-                Text("Detailed").tag(SummaryLength.detailed)
-            }
-            .pickerStyle(.segmented)
-        case .translate:
-            Picker("To", selection: $targetLanguage) {
-                Text("English").tag("English")
-                Text("中文").tag("Simplified Chinese")
-                Text("日本語").tag("Japanese")
-                Text("한국어").tag("Korean")
-                Text("Français").tag("French")
-            }
-            .pickerStyle(.segmented)
-        default:
-            EmptyView()
-        }
-    }
-
-    private func executeAction() async {
-        isProcessing = true
-        result = ""
-        let text = currentText
-
-        switch selectedAction {
-        case .polish:
-            result = await aiService.polish(text, style: polishStyle)
-        case .summarize:
-            result = await aiService.summarize(text, length: summaryLength)
-        case .continueWriting:
-            var acc = ""
-            for await chunk in await aiService.continueWriting(text) {
-                acc += chunk
-                result = acc
-            }
-        case .translate:
-            result = await aiService.translate(text, to: targetLanguage)
-        case .grammar:
-            let suggestions = await aiService.checkGrammar(text)
-            result = suggestions.isEmpty
-                ? "No issues found."
-                : suggestions.map { "• \($0.original) → \($0.suggestion)" }.joined(separator: "\n")
-        case .simplify:
-            result = await aiService.polish(text, style: .concise)
-        }
-        isProcessing = false
-    }
-
-    private func replaceContent() {
-        guard let index = appState.activeTabIndex else { return }
-        appState.openTabs[index].document.content = result
-        appState.openTabs[index].isModified = true
-        isPresented = false
-    }
-}
-#endif
-
-private struct ImagePreviewView: View {
-    let url: URL
-
-    var body: some View {
-        ZStack {
-            #if os(macOS)
-            Color(NSColor.textBackgroundColor)
-            if let image = NSImage(contentsOf: url) {
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .padding(24)
-            } else {
-                Text("Could not load image.")
-                    .foregroundStyle(.secondary)
-            }
-            #else
-            Color(uiColor: .systemBackground)
-            if let image = UIImage(contentsOfFile: url.path) {
-                Image(uiImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .padding(24)
-            } else {
-                Text("Could not load image.")
-                    .foregroundStyle(.secondary)
-            }
-            #endif
-        }
-    }
-}
-
-// MARK: - Adaptive Split View
-
-struct HSplitOrVStack<Content: View>: View {
-    @ViewBuilder let content: () -> Content
-
-    var body: some View {
-        #if os(macOS)
-        HSplitView {
-            content()
-        }
-        #else
-        GeometryReader { geo in
-            if geo.size.width > 600 {
-                HStack(spacing: 0) {
-                    content()
-                }
-            } else {
-                VStack(spacing: 0) {
-                    content()
-                }
-            }
-        }
-        #endif
-    }
-}
