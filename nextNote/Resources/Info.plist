@@ -10,31 +10,15 @@
 	<string>NextNote</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 NextAgentBC. Licensed under the PolyForm Noncommercial License 1.0.0. Commercial use requires a separate license.</string>
-	<!-- ATS left at the default (HTTPS only). If you want to talk to a
-	     local plain-HTTP LLM server (e.g. http://localhost:11434 for Ollama
-	     or http://100.x.x.x on a Tailscale LAN), add an NSAppTransportSecurity
-	     → NSExceptionDomains entry for that host. Example for Ollama:
-	        <key>NSAppTransportSecurity</key>
-	        <dict>
-	          <key>NSExceptionDomains</key>
-	          <dict>
-	            <key>localhost</key>
-	            <dict>
-	              <key>NSExceptionAllowsInsecureHTTPLoads</key><true/>
-	            </dict>
-	          </dict>
-	        </dict>
-	     See docs/LLM_SETUP.md for details. -->
+	<!-- AI provider endpoints commonly use plain HTTP on Tailscale tailnet
+	     (100.64.0.0/10), localhost (Ollama), or a user-chosen custom host.
+	     NSAllowsArbitraryLoads is broad but matches the BYO-endpoint design —
+	     the user picks where their LLM lives. HTTPS endpoints (OpenAI,
+	     Anthropic) still validate TLS certs normally. -->
 	<key>NSAppTransportSecurity</key>
 	<dict>
-		<key>NSExceptionDomains</key>
-		<dict>
-			<key>localhost</key>
-			<dict>
-				<key>NSExceptionAllowsInsecureHTTPLoads</key>
-				<true/>
-			</dict>
-		</dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
 	</dict>
 </dict>
 </plist>
