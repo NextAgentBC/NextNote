@@ -66,6 +66,9 @@ struct ContentView: View {
                 appState.triggerRescanLibrary = false
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .reembedLibraryRequested)) { _ in
+            Task { @MainActor in await reembedLibrary() }
+        }
         // Rescan whenever the window regains focus — user dropped a file in
         // Finder, switches back, expects to see it instantly. Debounced so
         // app-switch storms (Cmd-Tab loops) don't trigger N back-to-back
@@ -170,6 +173,19 @@ struct ContentView: View {
             context: modelContext
         )
         await MediaLibrary.shared.scanRoot(libraryRoots.mediaRoot)
+    }
+
+    @MainActor
+    private func reembedLibrary() async {
+        let descriptor = FetchDescriptor<Book>()
+        guard let books = try? modelContext.fetch(descriptor) else { return }
+        try? await appState.embeddingPipeline.embedLibrary(
+            books: books,
+            chapterTextsProvider: { @MainActor book in
+                await EPUBImporter.allChapterTexts(book: book, vault: vault)
+            },
+            progress: nil
+        )
     }
 
     // MARK: - Sidebar
