@@ -15,13 +15,15 @@ enum BookLibrary {
         guard let root = ebooksRoot else { return }
         let (epubs, pdfs) = enumerate(root)
 
+        NSLog("[BookLibrary] scan root=\(root.path) epubs=\(epubs.count) pdfs=\(pdfs.count)")
+
         if !epubs.isEmpty {
             let importer = EPUBImporter(vault: vault, context: context)
             for url in epubs {
                 do {
                     _ = try await importer.registerExisting(epubURL: url)
                 } catch {
-                    continue
+                    NSLog("[BookLibrary] epub register failed for \(url.lastPathComponent): \(error.localizedDescription)")
                 }
             }
         }
@@ -32,7 +34,7 @@ enum BookLibrary {
                 do {
                     _ = try await importer.registerExisting(pdfURL: url)
                 } catch {
-                    continue
+                    NSLog("[BookLibrary] pdf register failed for \(url.lastPathComponent): \(error.localizedDescription)")
                 }
             }
         }
