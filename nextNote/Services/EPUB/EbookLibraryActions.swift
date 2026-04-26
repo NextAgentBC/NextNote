@@ -194,46 +194,58 @@ enum EbookLibraryActions {
         NSLog("[Ebooks reconcile] indexed \(index.count) unique filenames under \(root.path)")
 
         var fixed = 0
-        var skippedAlreadyOK = 0
+        var skippedAlreadyDeepest = 0
         var skippedNoMatch = 0
         var skippedAmbiguous = 0
+        let rootStdPath = root.standardizedFileURL.path
         for book in books {
             let oldURL = EPUBImporter.resolveFileURL(book.relativePath, vault: vault)
-            let oldExists = oldURL.map { fm.fileExists(atPath: $0.path) } ?? false
-
-            // The current resolved path can exist but live OUTSIDE
-            // ebooksRoot (e.g. legacy books still in <vault>/Books/<slug>/
-            // from earlier import behavior). If we find the same filename
-            // inside ebooksRoot, prefer that — sidebar grouping cares
-            // about ebooksRoot prefix, not just file existence.
-            let currentInsideRoot: Bool = {
-                guard let oldURL else { return false }
-                let rootPath = root.standardizedFileURL.path + "/"
-                return oldURL.standardizedFileURL.path.hasPrefix(rootPath)
-            }()
-
-            if oldExists && currentInsideRoot {
-                skippedAlreadyOK += 1
-                continue
-            }
-
             let filename = oldURL?.lastPathComponent ?? (book.relativePath as NSString).lastPathComponent
             let candidates = index[filename] ?? []
             if candidates.isEmpty {
                 skippedNoMatch += 1
                 continue
             }
-            if candidates.count > 1 {
+
+            // Always prefer the deepest match inside ebooksRoot. If a
+            // root-level duplicate and a subfolder copy both exist
+            // (legacy importer left a copy at <vault>/Books/, user
+            // organized one into <ebooksRoot>/Ap/), the subfolder one
+            // is what the user actually organized.
+            let depths: [(URL, Int)] = candidates.map { url in
+                (url, url.standardizedFileURL.pathComponents.count)
+            }
+            guard let maxDepth = depths.map(\.1).max() else {
+                skippedNoMatch += 1
+                continue
+            }
+            let deepest = depths.filter { $0.1 == maxDepth }.map(\.0)
+            if deepest.count > 1 {
                 skippedAmbiguous += 1
                 continue
             }
-            let match = candidates[0]
+            let match = deepest[0]
+            let matchStdPath = match.standardizedFileURL.path
+
+            if oldURL?.standardizedFileURL.path == matchStdPath {
+                skippedAlreadyDeepest += 1
+                continue
+            }
+
+            // Ensure the chosen match is actually inside ebooksRoot —
+            // we don't want to point a Book at some random vault file
+            // sharing the same name.
+            guard matchStdPath.hasPrefix(rootStdPath + "/") || matchStdPath == rootStdPath else {
+                skippedNoMatch += 1
+                continue
+            }
+
             // Prefer vault-relative path; fall back to absolute path
             // (resolveFileURL accepts both, leading-slash → URL(fileURLWithPath:)).
             book.relativePath = vault.relativePath(for: match) ?? match.path
             fixed += 1
         }
-        NSLog("[Ebooks reconcile] fixed=\(fixed) alreadyOK=\(skippedAlreadyOK) noMatch=\(skippedNoMatch) ambiguous=\(skippedAmbiguous) total=\(books.count)")
+        NSLog("[Ebooks reconcile] fixed=\(fixed) alreadyDeepest=\(skippedAlreadyDeepest) noMatch=\(skippedNoMatch) ambiguous=\(skippedAmbiguous) total=\(books.count)")
         if fixed > 0 { try? modelContext.save() }
         return fixed
     }
