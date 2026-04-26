@@ -39,6 +39,21 @@ struct EPUBTOCNode: Codable, Hashable {
     var title: String
     var href: String
     var children: [EPUBTOCNode]
+    /// Resolved at parse time: spine index this entry points to, or nil
+    /// when the TOC links to a non-spine resource.
+    var spineIndex: Int?
+    /// URL fragment after `#` — set when the TOC links into the middle
+    /// of a chapter. nil for whole-chapter entries.
+    var anchor: String?
+
+    init(title: String, href: String, children: [EPUBTOCNode],
+         spineIndex: Int? = nil, anchor: String? = nil) {
+        self.title = title
+        self.href = href
+        self.children = children
+        self.spineIndex = spineIndex
+        self.anchor = anchor
+    }
 }
 
 struct ParsedEPUB {
@@ -88,6 +103,7 @@ enum EPUBParser {
         let toc = parseTOC(
             opf: opf,
             manifest: manifest,
+            spine: spine,
             contentBase: contentBase
         )
 
@@ -221,31 +237,92 @@ enum EPUBParser {
     private static func parseTOC(
         opf: Document,
         manifest: [String: EPUBManifestItem],
+        spine: [EPUBManifestItem],
         contentBase: URL
     ) -> [EPUBTOCNode] {
+        var nodes: [EPUBTOCNode] = []
+
         // EPUB3: manifest item with properties="nav"
         if let navItem = manifest.values.first(where: {
             ($0.properties ?? "").contains("nav")
         }) {
             let navURL = contentBase.appendingPathComponent(navItem.href)
-            if let nodes = parseNavXHTML(at: navURL, contentBase: contentBase),
-               !nodes.isEmpty {
-                return nodes
+            if let parsed = parseNavXHTML(at: navURL, contentBase: contentBase),
+               !parsed.isEmpty {
+                nodes = parsed
             }
         }
 
         // EPUB2: spine[toc] references an NCX manifest item
-        if let tocID = try? opf.select("spine").first()?.attr("toc"),
+        if nodes.isEmpty,
+           let tocID = try? opf.select("spine").first()?.attr("toc"),
            !tocID.isEmpty,
            let ncxItem = manifest[tocID] {
             let ncxURL = contentBase.appendingPathComponent(ncxItem.href)
-            if let nodes = parseNCX(at: ncxURL, contentBase: contentBase),
-               !nodes.isEmpty {
-                return nodes
+            if let parsed = parseNCX(at: ncxURL, contentBase: contentBase),
+               !parsed.isEmpty {
+                nodes = parsed
             }
         }
 
-        return []
+        // Resolve every entry's href to a spine index. URL.path equality
+        // against spine[].absolute path — both sides are derived from the
+        // same contentBase, so encoding / case / subdir variations are
+        // already handled by URL standardization.
+        let spineIndexByPath: [String: Int] = {
+            var dict: [String: Int] = [:]
+            for (i, item) in spine.enumerated() {
+                let absURL = contentBase
+                    .appendingPathComponent(item.href)
+                    .standardizedFileURL
+                dict[absURL.path] = i
+                // Also map by lastPathComponent as a fallback for the
+                // long tail where TOC and spine disagree on subdir
+                // prefix.
+                let last = absURL.lastPathComponent
+                if dict["::file::\(last)"] == nil {
+                    dict["::file::\(last)"] = i
+                }
+            }
+            return dict
+        }()
+
+        return nodes.map { resolveSpineIndex($0, contentBase: contentBase, indexByPath: spineIndexByPath) }
+    }
+
+    private static func resolveSpineIndex(
+        _ node: EPUBTOCNode,
+        contentBase: URL,
+        indexByPath: [String: Int]
+    ) -> EPUBTOCNode {
+        var copy = node
+
+        let raw = node.href.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !raw.isEmpty && !raw.hasPrefix("#") {
+            let parts = raw.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)
+            let path = parts.first.map(String.init) ?? raw
+            let anchor = parts.count > 1 ? String(parts[1]) : ""
+            if !anchor.isEmpty { copy.anchor = anchor }
+
+            let absPath = contentBase
+                .appendingPathComponent(path)
+                .standardizedFileURL.path
+            if let idx = indexByPath[absPath] {
+                copy.spineIndex = idx
+            } else {
+                let last = (path as NSString).lastPathComponent
+                if let idx = indexByPath["::file::\(last)"] {
+                    copy.spineIndex = idx
+                }
+            }
+        } else if raw.hasPrefix("#") {
+            copy.anchor = String(raw.dropFirst())
+        }
+
+        copy.children = node.children.map {
+            resolveSpineIndex($0, contentBase: contentBase, indexByPath: indexByPath)
+        }
+        return copy
     }
 
     /// Resolve a TOC href to the same form spine uses: a path relative to

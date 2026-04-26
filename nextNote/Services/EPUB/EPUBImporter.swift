@@ -296,7 +296,9 @@ final class EPUBImporter {
         BookTOCEntry(
             title: n.title,
             href: n.href,
-            children: n.children.map { Self.convertToBookTOC($0) }
+            children: n.children.map { Self.convertToBookTOC($0) },
+            spineIndex: n.spineIndex,
+            anchor: n.anchor
         )
     }
 

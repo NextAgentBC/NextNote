@@ -76,11 +76,47 @@ enum BookTheme: String, CaseIterable, Identifiable {
 }
 
 // Serialized TOC entry — persisted inside Book.tocJSON.
+//
+// `spineIndex` is resolved at import time by matching the entry's
+// absolute file URL against spine[].absolute URL (path equality).
+// Doing this once at import lets every chapter jump be a plain
+// integer lookup, sidestepping the brittle string-format matching
+// that Calibre / foliate / Apple Books all gave up on years ago.
+//
+// `href` is kept around for debug + the Refresh TOC fallback path.
+// `anchor` is the URL fragment (id) when the TOC links to a
+// mid-chapter section; nil for whole-chapter entries.
 struct BookTOCEntry: Codable, Hashable, Identifiable {
     var title: String
     var href: String
     var children: [BookTOCEntry]
+    var spineIndex: Int?
+    var anchor: String?
     var id: String { href + "|" + title }
+
+    // Manual Codable so older books (saved before spineIndex/anchor
+    // existed) still decode without nil-key errors.
+    enum CodingKeys: String, CodingKey {
+        case title, href, children, spineIndex, anchor
+    }
+
+    init(title: String, href: String, children: [BookTOCEntry],
+         spineIndex: Int? = nil, anchor: String? = nil) {
+        self.title = title
+        self.href = href
+        self.children = children
+        self.spineIndex = spineIndex
+        self.anchor = anchor
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.title = try c.decode(String.self, forKey: .title)
+        self.href = try c.decode(String.self, forKey: .href)
+        self.children = try c.decodeIfPresent([BookTOCEntry].self, forKey: .children) ?? []
+        self.spineIndex = try c.decodeIfPresent(Int.self, forKey: .spineIndex)
+        self.anchor = try c.decodeIfPresent(String.self, forKey: .anchor)
+    }
 }
 
 // Spine entry — persisted inside Book.spineJSON.

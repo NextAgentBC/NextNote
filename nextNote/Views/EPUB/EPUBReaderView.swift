@@ -13,6 +13,7 @@ struct EPUBReaderView: View {
     @State private var spine: [BookSpineEntry] = []
     @State private var errorMessage: String?
     @State private var showHighlights: Bool = false
+    @State private var showTOC: Bool = false
     @StateObject private var pager = EPUBPager()
     @FocusState private var readerFocused: Bool
     @State private var pendingAnchor: String?
@@ -56,10 +57,25 @@ struct EPUBReaderView: View {
                 errorState(error)
             } else if let chapterURL = currentChapterURL,
                       let root = unzipRoot {
-                VStack(spacing: 0) {
-                    readerToolbar
-                    Divider()
-                    EPUBContentWebView(
+                HStack(spacing: 0) {
+                    if showTOC {
+                        EPUBTOCDrawer(
+                            toc: toc,
+                            spine: spine,
+                            currentSpineIndex: currentIndex,
+                            onJump: { idx, anchor in
+                                jumpToSpine(idx, anchor: anchor)
+                            },
+                            onClose: { withAnimation(.easeInOut(duration: 0.15)) { showTOC = false } }
+                        )
+                        .frame(width: 260)
+                        .transition(.move(edge: .leading))
+                        Divider()
+                    }
+                    VStack(spacing: 0) {
+                        readerToolbar
+                        Divider()
+                        EPUBContentWebView(
                         chapterURL: chapterURL,
                         readAccessRoot: root,
                         fontSize: book.fontSize,
@@ -86,6 +102,7 @@ struct EPUBReaderView: View {
                     #endif
                     Divider()
                     bottomBar
+                    }
                 }
             } else {
                 ProgressView("Loading…")
@@ -159,6 +176,15 @@ struct EPUBReaderView: View {
 
     private var readerToolbar: some View {
         HStack(spacing: 12) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.15)) { showTOC.toggle() }
+            } label: {
+                Image(systemName: showTOC ? "sidebar.left" : "list.bullet.rectangle")
+                    .accessibilityLabel("Table of Contents")
+            }
+            .help("Table of Contents (⌘⇧T)")
+            .keyboardShortcut("t", modifiers: [.command, .shift])
+
             // Title is shown in the window chrome — no need to duplicate
             // it here. Leave the leading edge clean for toolbar controls.
             Spacer()
@@ -301,6 +327,22 @@ struct EPUBReaderView: View {
     private func goToChapter(_ idx: Int) {
         pendingAnchor = nil
         setChapter(idx)
+    }
+
+    /// TOC drawer click handler — pre-resolved spine index makes this a
+    /// plain integer jump, no path matching needed.
+    private func jumpToSpine(_ idx: Int, anchor: String?) {
+        guard idx >= 0, idx < spine.count else { return }
+        appState.pendingBookAnchor = anchor
+        if book.lastChapterIndex != idx {
+            book.lastChapterIndex = idx
+            book.lastScrollRatio = 0
+        } else if anchor != nil {
+            // Same chapter, anchor jump only.
+            book.lastScrollRatio = 0
+        }
+        pendingAnchor = anchor
+        try? modelContext.save()
     }
 
     private func syncAnchorFromAppState() {
