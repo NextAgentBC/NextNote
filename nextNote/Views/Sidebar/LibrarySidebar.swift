@@ -41,13 +41,15 @@ struct LibrarySidebar: View {
     var body: some View {
         VStack(spacing: 0) {
             NotesSection()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .layoutPriority(1)
+                .frame(maxHeight: .infinity)
 
+            // Trays share one scrollable region so a short window doesn't
+            // clip the last tray off-screen.
             Divider()
-
-            bottomTrayStack
-                .frame(maxWidth: .infinity, maxHeight: 380, alignment: .bottom)
+            ScrollView {
+                bottomTrayStack
+            }
+            .frame(maxHeight: 420)
         }
         .onChange(of: appState.triggerRescanLibrary) { _, v in
             if v { appState.triggerRescanLibrary = false }
@@ -105,7 +107,8 @@ struct LibrarySidebar: View {
 
     var bottomTrayStack: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(bottomTrays) { tray in
+            ForEach(Array(bottomTrays.enumerated()), id: \.element) { idx, tray in
+                if idx > 0 { Divider() }
                 bottomTray(tray)
                     .opacity(draggingTray == tray ? 0.55 : 1)
                     .onDrag {
@@ -123,7 +126,6 @@ struct LibrarySidebar: View {
                     )
             }
         }
-        .background(.regularMaterial.opacity(0.35))
     }
 
     @ViewBuilder
