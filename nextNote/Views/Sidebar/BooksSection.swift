@@ -13,6 +13,9 @@ struct BooksSection: View {
     @EnvironmentObject private var libraryRoots: LibraryRoots
     @State private var expandedIDs: Set<UUID> = []
     @State private var expandedFolders: Set<String> = []
+    /// Books whose TOC has already been auto-checked for staleness this
+    /// session — prevents re-parsing on every render.
+    @State private var tocChecked: Set<UUID> = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -157,6 +160,14 @@ struct BooksSection: View {
         let toc = decodeTOC(book)
         let spine = decodeSpine(book)
         let tocLeading = indent + 18
+        // Books imported before TOC normalization shipped have hrefs in a
+        // pre-canonical format that doesn't match spine. Detect at first
+        // expand and silently re-parse so the user doesn't have to right-
+        // click "Refresh Table of Contents". `Color.clear.onAppear` runs
+        // the side effect once when this content actually appears.
+        Color.clear
+            .frame(height: 0)
+            .onAppear { autoRefreshTOCIfStale(book) }
         if toc.isEmpty {
             ForEach(Array(spine.enumerated()), id: \.offset) { idx, _ in
                 tocLine(
@@ -210,6 +221,41 @@ struct BooksSection: View {
         let title: String
         let href: String
         let depth: Int
+    }
+
+    private func autoRefreshTOCIfStale(_ book: Book) {
+        guard !tocChecked.contains(book.id) else { return }
+        tocChecked.insert(book.id)
+        let toc = decodeTOC(book)
+        let spine = decodeSpine(book)
+        guard isTOCStale(toc: toc, spine: spine) else { return }
+        _ = EPUBImporter.refreshMetadata(book, vault: vaultEnv)
+        try? modelContext.save()
+    }
+
+    /// True iff the stored TOC has entries but none of them resolve to a
+    /// spine path under any of the matching strategies. Indicates the
+    /// book was imported with an older parser and needs a re-parse.
+    private func isTOCStale(toc: [BookTOCEntry], spine: [BookSpineEntry]) -> Bool {
+        guard !toc.isEmpty, !spine.isEmpty else { return false }
+        let flat = flattenTOC(toc)
+        let spinePaths = Set(spine.map {
+            ($0.href.split(separator: "#").first.map(String.init) ?? $0.href)
+        })
+        let spineFiles = Set(spine.map {
+            (($0.href.split(separator: "#").first.map(String.init) ?? $0.href) as NSString).lastPathComponent
+        })
+        for row in flat {
+            let raw = row.href
+            if raw.isEmpty || raw.hasPrefix("#") { continue }
+            let path = raw.split(separator: "#").first.map(String.init) ?? raw
+            let decoded = path.removingPercentEncoding ?? path
+            let standardized = (decoded as NSString).standardizingPath
+            let lastComponent = (decoded as NSString).lastPathComponent
+            if spinePaths.contains(standardized) { return false }
+            if spineFiles.contains(lastComponent) { return false }
+        }
+        return true
     }
 
     private func decodeTOC(_ book: Book) -> [BookTOCEntry] {
