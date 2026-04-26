@@ -142,6 +142,7 @@ struct BooksSection: View {
         .background(isActive ? Color.accentColor.opacity(0.12) : Color.clear)
         .contextMenu {
             Button("Reveal in Finder") { revealInFinder(book) }
+            Button("Refresh Table of Contents") { refreshTOC(book) }
             Divider()
             Button("Remove from Library", role: .destructive) { remove(book) }
         }
@@ -290,6 +291,14 @@ struct BooksSection: View {
 
     private func revealInFinder(_ book: Book) {
         FinderActions.reveal(EPUBImporter.resolveFileURL(book.relativePath, vault: vaultEnv))
+    }
+
+    /// Re-parse TOC + spine from the unzipped EPUB on disk. Useful for
+    /// books imported before TOC parsing got robust, or where the EPUB's
+    /// nav.xhtml / NCX changed shape after import.
+    private func refreshTOC(_ book: Book) {
+        _ = EPUBImporter.refreshMetadata(book, vault: vaultEnv)
+        try? modelContext.save()
     }
 
     private func remove(_ book: Book) {

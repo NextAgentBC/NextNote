@@ -40,6 +40,31 @@ final class EPUBImporter {
             .appendingPathComponent(bookID.uuidString, isDirectory: true)
     }
 
+    /// Re-parse the book's TOC + spine from its unzipped EPUB and persist
+    /// back to SwiftData. Used to recover from cases where the original
+    /// import landed an empty TOC (parser miss, import-time race) — the
+    /// sidebar shows a generic "Chapter N" list as a fallback when
+    /// `tocJSON` decodes to empty, so calling this and re-rendering
+    /// surfaces the real chapter titles.
+    @discardableResult
+    static func refreshMetadata(_ book: Book, vault: VaultStore) -> Bool {
+        do {
+            let root = try ensureUnzipped(book, vault: vault)
+            let parsed = try EPUBParser.parse(unzippedRoot: root)
+            let tocEntries = parsed.toc.map { Self.convertToBookTOC($0) }
+            let spineEntries = parsed.spine.map {
+                BookSpineEntry(href: $0.href, mediaType: $0.mediaType)
+            }
+            let tocData = (try? JSONEncoder().encode(tocEntries)) ?? Data("[]".utf8)
+            let spineData = (try? JSONEncoder().encode(spineEntries)) ?? Data("[]".utf8)
+            book.tocJSON = tocData
+            book.spineJSON = spineData
+            return !tocEntries.isEmpty
+        } catch {
+            return false
+        }
+    }
+
     /// Ensure the book's unzipped workspace exists on disk. Used by the reader
     /// on open — the Caches dir can be wiped by the OS at any time.
     static func ensureUnzipped(_ book: Book, vault: VaultStore) throws -> URL {

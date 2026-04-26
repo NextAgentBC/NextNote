@@ -1,5 +1,8 @@
 import SwiftUI
 import WebKit
+#if os(macOS)
+import AppKit
+#endif
 
 #if os(macOS)
 typealias EPUBPlatformWebView = NSViewRepresentable
@@ -35,6 +38,10 @@ struct EPUBContentWebView: EPUBPlatformWebView {
     var onScroll: (Double) -> Void
     /// Fired when user pages past the chapter's end (next) or start (prev).
     var onPageBoundary: (PageBoundary) -> Void = { _ in }
+    /// Fired when user clicks an `<a href>` inside the chapter pointing to
+    /// another XHTML file in the spine — parent jumps to that chapter.
+    /// `anchor` is the fragment (id), nil if the link has none.
+    var onInternalLink: (_ targetFilename: String, _ anchor: String?) -> Void = { _, _ in }
     /// Observable command channel — parent writes, view reads.
     @ObservedObject var pager: EPUBPager
 
@@ -153,6 +160,53 @@ struct EPUBContentWebView: EPUBPlatformWebView {
         }
 
         // MARK: WKNavigationDelegate
+
+        /// Intercept `<a href>` clicks. Same-document fragment links scroll
+        /// in-place; cross-document file:// links route through the reader's
+        /// chapter switcher so SwiftUI state stays in sync. http(s) opens
+        /// externally.
+        func webView(_ webView: WKWebView,
+                     decidePolicyFor navigationAction: WKNavigationAction,
+                     decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+            guard navigationAction.navigationType == .linkActivated,
+                  let url = navigationAction.request.url else {
+                decisionHandler(.allow)
+                return
+            }
+
+            // External http(s) — hand off to default browser, don't navigate
+            // the reader webview.
+            if let scheme = url.scheme?.lowercased(),
+               scheme == "http" || scheme == "https" {
+                #if os(macOS)
+                NSWorkspace.shared.open(url)
+                #endif
+                decisionHandler(.cancel)
+                return
+            }
+
+            // file:// link inside the EPUB unpack dir.
+            if url.isFileURL {
+                let currentNoFragment = parent.chapterURL.standardizedFileURL.deletingPathExtension().path
+                let targetNoFragment = url.standardizedFileURL.deletingPathExtension().path
+                let anchor = url.fragment.map { $0.isEmpty ? nil : $0 } ?? nil
+
+                if currentNoFragment == targetNoFragment {
+                    // Same chapter, fragment-only — let WebKit scroll.
+                    decisionHandler(.allow)
+                    return
+                }
+
+                // Cross-chapter — route through SwiftUI so book.lastChapterIndex
+                // updates and the reader stays consistent.
+                let filename = url.lastPathComponent
+                parent.onInternalLink(filename, anchor)
+                decisionHandler(.cancel)
+                return
+            }
+
+            decisionHandler(.allow)
+        }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             let js = """

@@ -70,6 +70,7 @@ struct EPUBReaderView: View {
                         onSelectionHighlight: handleHighlightSelection,
                         onScroll: handleScroll,
                         onPageBoundary: handleBoundary,
+                        onInternalLink: handleInternalLink,
                         pager: pager
                     )
                     .focusable()
@@ -126,8 +127,19 @@ struct EPUBReaderView: View {
                 (book.opfRelativePath as NSString).deletingLastPathComponent,
                 isDirectory: true
             )
-            let decodedTOC = (try? JSONDecoder().decode([BookTOCEntry].self, from: book.tocJSON)) ?? []
-            let decodedSpine = (try? JSONDecoder().decode([BookSpineEntry].self, from: book.spineJSON)) ?? []
+            var decodedTOC = (try? JSONDecoder().decode([BookTOCEntry].self, from: book.tocJSON)) ?? []
+            var decodedSpine = (try? JSONDecoder().decode([BookSpineEntry].self, from: book.spineJSON)) ?? []
+
+            // Recover from imports that landed an empty TOC — re-parse from
+            // the unzipped EPUB now that the file is on disk. Books in the
+            // library before TOC parsing was robust will pick up real
+            // chapter titles the first time they're opened.
+            if decodedTOC.isEmpty || decodedSpine.isEmpty {
+                _ = EPUBImporter.refreshMetadata(book, vault: vault)
+                decodedTOC = (try? JSONDecoder().decode([BookTOCEntry].self, from: book.tocJSON)) ?? []
+                decodedSpine = (try? JSONDecoder().decode([BookSpineEntry].self, from: book.spineJSON)) ?? []
+            }
+
             self.unzipRoot = root
             self.contentBase = contentDir
             self.toc = decodedTOC
@@ -308,6 +320,28 @@ struct EPUBReaderView: View {
             if currentIndex < spine.count - 1 { goToChapter(currentIndex + 1) }
         case .atStart:
             if currentIndex > 0 { goToChapter(currentIndex - 1) }
+        }
+    }
+
+    /// Resolve an `<a href>` click inside a chapter to the spine entry that
+    /// owns that XHTML file, then jump. Anchor (if any) is forwarded via
+    /// appState.pendingBookAnchor so the webview scrolls there once the
+    /// new chapter loads.
+    private func handleInternalLink(filename: String, anchor: String?) {
+        guard let idx = spine.firstIndex(where: {
+            let sh = $0.href.split(separator: "#").first.map(String.init) ?? $0.href
+            return (sh as NSString).lastPathComponent == filename
+        }) else { return }
+        appState.pendingBookAnchor = anchor
+        if book.lastChapterIndex != idx {
+            book.lastChapterIndex = idx
+            book.lastScrollRatio = 0
+            try? modelContext.save()
+        } else if let anchor {
+            // Already on this chapter — anchor change alone won't trigger
+            // updateNSView via lastChapterIndex, but the @State pendingAnchor
+            // sync will fire from onChange(of: appState.pendingBookAnchor).
+            pendingAnchor = anchor
         }
     }
 
