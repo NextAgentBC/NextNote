@@ -40,13 +40,52 @@ extension MediaLibraryView {
             .buttonStyle(.bordered)
             .controlSize(.small)
             .disabled(isAutoCleaning || locator.downloadFolderURL == nil)
-            .help("AI extracts performer + song, renames + moves into Category/Performer folders")
+            .help("Local string parser — extracts artist + song, renames + moves into <Artist>/ folders")
+
+            Button {
+                tidyWithClaude()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "sparkles.tv")
+                    Text("Tidy with Claude")
+                        .font(.caption)
+                }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(tidyTargetRoot() == nil)
+            .help("Open the embedded terminal and ask Claude to organize the library — handles edge cases the local parser misses")
 
             Spacer()
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
         .background(.bar)
+    }
+
+    /// Pick the directory Claude should organize. Prefers the configured
+    /// Media root (where Auto-Clean already lands files); falls back to
+    /// the yt-dlp download folder if Media isn't set up yet.
+    func tidyTargetRoot() -> URL? {
+        libraryRoots.mediaRoot ?? library.ambientFolderURL ?? locator.downloadFolderURL
+    }
+
+    /// Drop a pre-baked prompt into the embedded terminal so Claude CLI
+    /// can crawl the media library, propose a rename plan, and apply it
+    /// after user confirmation. Closes the sheet so the terminal pane is
+    /// visible.
+    func tidyWithClaude() {
+        guard let root = tidyTargetRoot() else { return }
+        let prompt = TidyMediaPrompt.build(rootPath: root.path)
+        appState.showTerminal = true
+        appState.pendingTerminalCommand = "claude " + shellEscape(prompt)
+        dismiss()
+    }
+
+    /// Single-quote escape for shell — fine for the prompt text since we
+    /// only need to neutralize embedded single quotes.
+    private func shellEscape(_ s: String) -> String {
+        "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
     func runAutoClean() {

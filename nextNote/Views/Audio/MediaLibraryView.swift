@@ -7,6 +7,8 @@ import UniformTypeIdentifiers
 /// (Sidebar / Vibe / Detail / Actions).
 struct MediaLibraryView: View {
     @Environment(\.dismiss) var dismiss
+    @EnvironmentObject var appState: AppState
+    @EnvironmentObject var libraryRoots: LibraryRoots
     @StateObject var library = MediaLibrary.shared
     @StateObject var player = AmbientPlayer.shared
     @StateObject var locator = YTDLPLocator.shared
