@@ -267,8 +267,7 @@ struct NextNoteCommands: Commands {
     }
 
     private func revealInFinder(_ url: URL?) {
-        guard let url else { return }
-        NSWorkspace.shared.activateFileViewerSelecting([url])
+        FinderActions.reveal(url)
     }
 }
 #endif
