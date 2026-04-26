@@ -53,24 +53,88 @@ enum MediaCategorizer {
     /// enriched with YouTube metadata and a list of existing artist folders
     /// the new track should reuse when applicable.
     ///
-    /// `existingArtists` is the set of folders already present at the
-    /// destination root — the LLM is instructed to pick an exact match from
-    /// that list whenever the title describes the same performer, even if
-    /// spelled differently (G.E.M. → 邓紫棋).
+    /// Pure string parsing — no LLM. Handles the patterns yt-dlp / YouTube
+    /// titles ship with:
+    ///   - "Artist - Song" / "Artist – Song" / "Artist — Song"
+    ///   - " [videoId]" suffix yt-dlp appends
+    ///   - "(Official Music Video)" / "[HD]" / "(Lyrics)" marketing noise
+    /// Falls back to `context.uploader` (yt-dlp's channel/uploader) as
+    /// artist when the title has no separator.
+    ///
+    /// When `existingArtists` includes a case-insensitive match for the
+    /// parsed artist (or its uploader fallback), the existing folder name
+    /// is reused verbatim — keeps "邓紫棋" / "G.E.M." from creating two
+    /// folders for the same person on subsequent downloads.
     static func cleanAndClassify(
         title: String,
         context: Context? = nil,
         existingArtists: [String] = []
     ) async throws -> Cleaned {
-        // Parse "Artist - Song" pattern if present; otherwise use title as song.
-        let parts = title.components(separatedBy: " - ")
+        let stripped = stripNoise(title)
+
+        // Normalize unicode dashes to ASCII " - " before splitting.
+        let normalized = stripped
+            .replacingOccurrences(of: " — ", with: " - ")  // em dash
+            .replacingOccurrences(of: " – ", with: " - ")  // en dash
+            .replacingOccurrences(of: " | ", with: " - ")  // pipe (uploader|song)
+
+        var artist: String?
+        var song: String?
+
+        let parts = normalized.components(separatedBy: " - ")
         if parts.count >= 2 {
-            return Cleaned(
-                artist: sanitize(parts[0].trimmingCharacters(in: .whitespaces)).nonEmpty,
-                song: parts.dropFirst().joined(separator: " - ").trimmingCharacters(in: .whitespaces).nonEmpty
-            )
+            artist = sanitize(parts[0].trimmingCharacters(in: .whitespaces)).nonEmpty
+            song = sanitize(parts.dropFirst().joined(separator: " - ")
+                                .trimmingCharacters(in: .whitespaces)).nonEmpty
+        } else {
+            // No separator — fall back to uploader / channel as artist.
+            song = sanitize(normalized.trimmingCharacters(in: .whitespaces)).nonEmpty
+            if let u = context?.uploader, let s = sanitize(u).nonEmpty {
+                artist = s
+            } else if let c = context?.channel, let s = sanitize(c).nonEmpty {
+                artist = s
+            }
         }
-        return Cleaned(artist: nil, song: title.trimmingCharacters(in: .whitespaces).nonEmpty)
+
+        // Reuse existing folder name when it case-insensitively matches —
+        // avoids "邓紫棋" / "邓紫棋 G.E.M." duplicates on next download.
+        if let a = artist {
+            if let match = existingArtists.first(where: {
+                $0.localizedCaseInsensitiveCompare(a) == .orderedSame
+            }) {
+                artist = match
+            }
+        }
+
+        return Cleaned(artist: artist, song: song)
+    }
+
+    /// Strip the cruft yt-dlp / YouTube uploaders pile onto titles:
+    ///   - " [xxxxxxxxxxx]" 11-char yt-dlp video id suffix
+    ///   - " (Official Music Video)", " (Lyric Video)", "[HD]" etc.
+    /// Conservative — only matches well-known patterns to avoid eating
+    /// real song titles that happen to contain parens.
+    static func stripNoise(_ title: String) -> String {
+        var s = title
+
+        // yt-dlp video-id tail: \s*\[A-Za-z0-9_-]{11}\]
+        if let r = s.range(of: #"\s*\[[A-Za-z0-9_-]{11}\]\s*$"#, options: .regularExpression) {
+            s = String(s[..<r.lowerBound])
+        }
+
+        // Common marketing tags. Keep `(feat. …)` since users want it.
+        let noisePatterns: [String] = [
+            #"\s*\((?:Official\s+)?(?:Music\s+)?(?:Video|MV|Audio|Lyrics?|Lyric Video|HD|4K|Performance)\s*\)"#,
+            #"\s*\[(?:Official\s+)?(?:Music\s+)?(?:Video|MV|Audio|Lyrics?|Lyric Video|HD|4K)\s*\]"#,
+            #"\s*\|\s*Official(?:\s+\w+)*$"#,
+        ]
+        for pat in noisePatterns {
+            while let r = s.range(of: pat, options: [.regularExpression, .caseInsensitive]) {
+                s.removeSubrange(r)
+            }
+        }
+
+        return s.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     // MARK: - One-shot organize (used by download path)
@@ -102,7 +166,23 @@ enum MediaCategorizer {
             throw CategorizeError.moveFailed(error.localizedDescription)
         }
 
-        let dest = FileDestinations.unique(for: url.lastPathComponent, in: dir)
+        // Rename: prefer "Artist - Song.ext"; if either is missing, fall
+        // back to whichever side parsed cleanly. Original yt-dlp filename
+        // (with [videoId] cruft) only used as last resort.
+        let ext = url.pathExtension
+        let song = cleaned.song.flatMap { sanitize($0).nonEmpty }
+        let cleanArtist = cleaned.artist.flatMap { sanitize($0).nonEmpty }
+        let baseName: String
+        if let cleanArtist, let song {
+            baseName = "\(cleanArtist) - \(song)"
+        } else if let song {
+            baseName = song
+        } else {
+            baseName = url.deletingPathExtension().lastPathComponent
+        }
+        let renamedFilename = ext.isEmpty ? baseName : "\(baseName).\(ext)"
+        let dest = FileDestinations.unique(for: renamedFilename, in: dir)
+
         do {
             try FileManager.default.moveItem(at: url, to: dest)
         } catch {
