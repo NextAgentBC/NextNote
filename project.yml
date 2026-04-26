@@ -13,16 +13,6 @@ settings:
     DEVELOPMENT_TEAM: ""
 
 packages:
-  # Remote MLX packages inherited from PureText (local LLM + tokenizers + HF API).
-  mlx-swift-lm:
-    url: https://github.com/DePasqualeOrg/mlx-swift-lm
-    branch: swift-tokenizers
-  swift-tokenizers-mlx:
-    url: https://github.com/DePasqualeOrg/swift-tokenizers-mlx
-    branch: main
-  swift-hf-api-mlx:
-    url: https://github.com/DePasqualeOrg/swift-hf-api-mlx
-    branch: main
   # EPUB reader + importer.
   ZIPFoundation:
     url: https://github.com/weichsel/ZIPFoundation
@@ -51,16 +41,6 @@ targets:
         type: folder
         buildPhase: resources
     dependencies:
-      - package: mlx-swift-lm
-        product: MLXLLM
-      - package: mlx-swift-lm
-        product: MLXVLM
-      - package: mlx-swift-lm
-        product: MLXLMCommon
-      - package: swift-tokenizers-mlx
-        product: MLXLMTokenizers
-      - package: swift-hf-api-mlx
-        product: MLXLMHFAPI
       - package: ZIPFoundation
       - package: SwiftSoup
       - package: SwiftTerm
@@ -73,8 +53,8 @@ targets:
         INFOPLIST_KEY_CFBundleDisplayName: NextNote
         INFOPLIST_KEY_CFBundleName: NextNote
         INFOPLIST_KEY_NSHumanReadableCopyright: "Copyright © 2026 NextAgentBC. Licensed under the PolyForm Noncommercial License 1.0.0. Commercial use requires a separate license."
-        MARKETING_VERSION: "0.3.0"
-        CURRENT_PROJECT_VERSION: "7"
+        MARKETING_VERSION: "0.4.0"
+        CURRENT_PROJECT_VERSION: "8"
         SWIFT_EMIT_LOC_STRINGS: "YES"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SUPPORTS_MACCATALYST: false

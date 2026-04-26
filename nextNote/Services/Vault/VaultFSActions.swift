@@ -32,40 +32,20 @@ enum VaultFSActions {
 
     static func rename(_ relPath: String, to newName: String, root: URL) throws -> String {
         let url = root.appending(path: relPath, directoryHint: .notDirectory)
-        let wasDirectory = isDirectory(url)
         let newURL = try NoteIO.rename(url, to: newName)
-        let newRel = relativePath(for: newURL, root: root) ?? newURL.lastPathComponent
-        if wasDirectory {
-            ChatStore.renameDirectory(from: relPath, to: newRel, vaultRoot: root)
-        } else {
-            ChatStore.rename(from: relPath, to: newRel, vaultRoot: root)
-        }
-        return newRel
+        return relativePath(for: newURL, root: root) ?? newURL.lastPathComponent
     }
 
     static func delete(_ relPath: String, root: URL) throws {
         let url = root.appending(path: relPath, directoryHint: .notDirectory)
-        let wasDirectory = isDirectory(url)
         _ = try NoteIO.delete(url)
-        if wasDirectory {
-            ChatStore.deleteDirectory(prefix: relPath, vaultRoot: root)
-        } else {
-            ChatStore.delete(relativePath: relPath, vaultRoot: root)
-        }
     }
 
     static func move(_ relPath: String, toFolder destPath: String, root: URL) throws -> String {
         let source = root.appending(path: relPath, directoryHint: .notDirectory)
         let dest = folderURL(for: destPath, root: root)
-        let wasDirectory = isDirectory(source)
         let newURL = try NoteIO.move(source, toFolder: dest)
-        let newRel = relativePath(for: newURL, root: root) ?? newURL.lastPathComponent
-        if wasDirectory {
-            ChatStore.renameDirectory(from: relPath, to: newRel, vaultRoot: root)
-        } else {
-            ChatStore.rename(from: relPath, to: newRel, vaultRoot: root)
-        }
-        return newRel
+        return relativePath(for: newURL, root: root) ?? newURL.lastPathComponent
     }
 
     /// Returns imported relative paths. Per-file errors are passed back via `onError`.

@@ -15,7 +15,9 @@ final class VaultStore: ObservableObject {
     static let imageExts: Set<String> = VaultTreeScanner.imageExts
 
     init() {
-        VaultStoreAccess.bind(self)
+        // Ownership of the notes-root bookmark has moved to LibraryRoots.
+        // Don't resolve here — ContentView calls `adopt(url:)` after
+        // LibraryRoots resolves its Notes bookmark.
     }
 
     /// Hand over the Notes root resolved by LibraryRoots. No bookmark is saved.
@@ -73,7 +75,6 @@ final class VaultStore: ObservableObject {
         if persistBookmark {
             try? VaultBookmark.save(url)
         }
-        AITextService.shared.bindVault(rootURL: url)
         Task { await scan() }
     }
 

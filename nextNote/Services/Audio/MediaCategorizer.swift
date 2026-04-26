@@ -62,92 +62,15 @@ enum MediaCategorizer {
         context: Context? = nil,
         existingArtists: [String] = []
     ) async throws -> Cleaned {
-        let existingBlock = existingArtists.isEmpty
-            ? ""
-            : """
-
-            EXISTING ARTIST FOLDERS (reuse exactly one of these names when the
-            track is by the same performer — aliases / English-vs-native
-            spellings must map onto the existing folder):
-            \(existingArtists.map { "- \($0)" }.joined(separator: "\n"))
-            """
-
-        let system = LLMMessage(.system, """
-        You extract clean metadata for a one-level media library.
-        Reply ONLY with strict JSON, no prose, no markdown fence. Schema:
-        {
-          "artist": "<canonical folder name — see rules, null if truly unknown>",
-          "song":   "<clean song / episode title, null if truly unknown>"
+        // Parse "Artist - Song" pattern if present; otherwise use title as song.
+        let parts = title.components(separatedBy: " - ")
+        if parts.count >= 2 {
+            return Cleaned(
+                artist: sanitize(parts[0].trimmingCharacters(in: .whitespaces)).nonEmpty,
+                song: parts.dropFirst().joined(separator: " - ").trimmingCharacters(in: .whitespaces).nonEmpty
+            )
         }
-
-        ARTIST RULES — this is the folder name. ONE folder per performer, ever.
-        - Output the performer's canonical name. Never invent variants.
-        - Prefer the NATIVE-LANGUAGE name. Chinese artists use their Chinese
-          name (邓紫棋, 周深, 林俊杰). Japanese artists use 日本語. Korean artists
-          use 한글. Western artists use the English stage name.
-        - Never store two folders for the same person:
-            G.E.M. / Gloria Tang / 邓紫棋  → pick 邓紫棋
-            JJ Lin / 林俊杰                → pick 林俊杰
-            周深 / Charlie Zhou            → pick 周深
-            Taylor Swift / テイラー       → pick Taylor Swift
-        - Collabs / duets: join performers with " & ", native names, ordered
-          as they appear in the title. e.g. "周深 & 张韶涵", "Taylor Swift &
-          Ed Sheeran". Keep unique pairings in their own folders.
-        - For podcasts / lectures / audiobooks: use the host / author / course
-          name as the artist field (same folder rules).
-        - Compilation channels (ZJSTV Music Channel, Vevo, etc.) are NOT the
-          artist — parse the real performer from the title.
-        - If truly unknown, return null.
-
-        SONG RULES:
-        - Strip marketing: "Official MV", "HD", "【】", "Live", track numbers,
-          language tags. Keep just the song name.
-        - Chinese titles: strip patterns like "纯享丨A+B同台演唱《歌》" —
-          the song is what's between 《》.
-        - English titles "ARTIST - SONG (feat. X)": song = "SONG".
-
-        Output: strings ASCII-or-CJK only. No slash, colon, backslash, bracket,
-        quote in artist. Use null (not "") when unknown.
-        \(existingBlock)
-        """)
-
-        var userBody = "Title: \(title)"
-        if let ctx = context, !ctx.isEmpty {
-            if let u = ctx.uploader { userBody += "\nUploader: \(u)" }
-            if let c = ctx.channel, c != ctx.uploader { userBody += "\nChannel: \(c)" }
-            if let cats = ctx.categories { userBody += "\nYT categories: \(cats)" }
-            if let t = ctx.tags { userBody += "\nTags: \(t)" }
-            if let p = ctx.playlist { userBody += "\nPlaylist: \(p)" }
-        }
-        let user = LLMMessage(.user, userBody)
-
-        let provider = AITextService.shared.currentProvider
-        let raw = try await provider.generate(
-            messages: [system, user],
-            parameters: LLMParameters(maxTokens: 200, temperature: 0.15)
-        )
-        return try parseCleaned(raw)
-    }
-
-    private static func parseCleaned(_ raw: String) throws -> Cleaned {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { throw CategorizeError.emptyResponse }
-        let stripped = strippedFences(trimmed)
-        guard let jsonRange = firstJSONObject(in: stripped),
-              let data = String(stripped[jsonRange]).data(using: .utf8),
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else { throw CategorizeError.invalidJSON(stripped) }
-
-        func str(_ key: String) -> String? {
-            guard let v = obj[key] as? String else { return nil }
-            let t = v.trimmingCharacters(in: .whitespaces)
-            if t.isEmpty || t.lowercased() == "null" || t.lowercased() == "none" { return nil }
-            return t
-        }
-        return Cleaned(
-            artist: str("artist"),
-            song: str("song")
-        )
+        return Cleaned(artist: nil, song: title.trimmingCharacters(in: .whitespaces).nonEmpty)
     }
 
     // MARK: - One-shot organize (used by download path)
