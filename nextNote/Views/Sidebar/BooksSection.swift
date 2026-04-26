@@ -36,23 +36,36 @@ struct BooksSection: View {
     @State private var tidySelections: Set<UUID> = []
     @State private var showTidySheet = false
 
+    @State private var searchQuery: String = ""
+    @State private var searchTask: Task<Void, Never>? = nil
+    @State private var isSearchActive: Bool = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             sectionHeader
-            let groups = folderGroups()
-            ForEach(groups, id: \.folder) { group in
-                if group.folder.isEmpty {
-                    ForEach(group.books) { book in
-                        bookRow(book, indent: 10)
+            semanticSearchBar
+            if isSearchActive {
+                semanticResultsList
+            } else {
+                let groups = folderGroups()
+                ForEach(groups, id: \.folder) { group in
+                    if group.folder.isEmpty {
+                        ForEach(group.books) { book in
+                            bookRow(book, indent: 10)
+                        }
+                    } else {
+                        folderGroupView(group)
                     }
-                } else {
-                    folderGroupView(group)
                 }
             }
         }
         .task {
             refreshDiskFolders()
             reconcileBookPaths()
+            appState.semanticSearch.updateBookCache(books)
+        }
+        .onChange(of: books) { _, newBooks in
+            appState.semanticSearch.updateBookCache(newBooks)
         }
         .onReceive(libraryRoots.$ebooksRoot) { _ in
             refreshDiskFolders()
@@ -93,6 +106,102 @@ struct BooksSection: View {
         .sheet(isPresented: $showTidySheet) {
             tidySheet
         }
+    }
+
+    // MARK: - Semantic Search
+
+    private var semanticSearchBar: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 11))
+                .foregroundStyle(.tertiary)
+            TextField("Search content…", text: $searchQuery)
+                .font(.system(size: 12))
+                .textFieldStyle(.plain)
+                .onChange(of: searchQuery) { _, newValue in
+                    searchTask?.cancel()
+                    let query = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if query.isEmpty {
+                        isSearchActive = false
+                        return
+                    }
+                    isSearchActive = true
+                    searchTask = Task {
+                        try? await Task.sleep(for: .milliseconds(500))
+                        guard !Task.isCancelled else { return }
+                        try? await appState.semanticSearch.search(query: query)
+                    }
+                }
+            if !searchQuery.isEmpty {
+                Button {
+                    searchQuery = ""
+                    isSearchActive = false
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+    }
+
+    private var semanticResultsList: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if appState.semanticSearch.isSearching {
+                HStack {
+                    ProgressView().controlSize(.mini)
+                    Text("Searching…").font(.caption).foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+            } else if appState.semanticSearch.results.isEmpty {
+                Text("No results")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+            } else {
+                ForEach(appState.semanticSearch.results) { result in
+                    semanticResultRow(result)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func semanticResultRow(_ result: SearchResult) -> some View {
+        Button {
+            if let book = result.book {
+                appState.openBookTab(bookID: book.id, title: book.title)
+                appState.pendingBookAnchor = nil
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 4) {
+                    Image(systemName: "book.closed")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                    Text(result.documentTitle)
+                        .font(.system(size: 12, weight: .medium))
+                        .lineLimit(1)
+                    Spacer()
+                    Text(String(format: "%.0f%%", result.similarity * 100))
+                        .font(.system(size: 10).monospacedDigit())
+                        .foregroundStyle(.tertiary)
+                }
+                Text(result.chunkContent)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Header
