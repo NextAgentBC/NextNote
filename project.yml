@@ -13,16 +13,6 @@ settings:
     DEVELOPMENT_TEAM: ""
 
 packages:
-  # Remote MLX packages inherited from PureText (local LLM + tokenizers + HF API).
-  mlx-swift-lm:
-    url: https://github.com/DePasqualeOrg/mlx-swift-lm
-    branch: swift-tokenizers
-  swift-tokenizers-mlx:
-    url: https://github.com/DePasqualeOrg/swift-tokenizers-mlx
-    branch: main
-  swift-hf-api-mlx:
-    url: https://github.com/DePasqualeOrg/swift-hf-api-mlx
-    branch: main
   # EPUB reader + importer.
   ZIPFoundation:
     url: https://github.com/weichsel/ZIPFoundation
@@ -51,16 +41,6 @@ targets:
         type: folder
         buildPhase: resources
     dependencies:
-      - package: mlx-swift-lm
-        product: MLXLLM
-      - package: mlx-swift-lm
-        product: MLXVLM
-      - package: mlx-swift-lm
-        product: MLXLMCommon
-      - package: swift-tokenizers-mlx
-        product: MLXLMTokenizers
-      - package: swift-hf-api-mlx
-        product: MLXLMHFAPI
       - package: ZIPFoundation
       - package: SwiftSoup
       - package: SwiftTerm
