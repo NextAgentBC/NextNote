@@ -189,6 +189,11 @@ actor VectorStore {
         return try await withConnection { conn in
             var results: [(chunk: ChunkResult, similarity: Float)] = []
 
+            // VectorChord requires probes set per session before ANN ORDER BY.
+            // Higher = better recall, slower. 10 is a reasonable default for
+            // a few-thousand-chunk corpus.
+            try await conn.query("SET vchordrq.probes = 10", logger: self.logger)
+
             let query: PostgresQuery
             if let filter {
                 let ct = filter.rawValue
