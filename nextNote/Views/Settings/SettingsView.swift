@@ -15,6 +15,8 @@ struct SettingsView: View {
                 .tabItem { Label("Vault", systemImage: "folder") }
             SyncSettingsView()
                 .tabItem { Label("Sync", systemImage: "icloud") }
+            AISettingsView()
+                .tabItem { Label("AI", systemImage: "brain") }
         }
         .frame(width: 520, height: 550)
         #else

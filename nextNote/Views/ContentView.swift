@@ -214,6 +214,12 @@ struct ContentView: View {
         }
         .toolbar { macToolbar }
         .overlay(alignment: .bottomTrailing) {
+            FloatingChatBall()
+                .environmentObject(appState)
+                .padding(.trailing, 20)
+                .padding(.bottom, 20)
+        }
+        .overlay(alignment: .bottomTrailing) {
             if appState.showShortcuts {
                 ShortcutCheatsheet()
                     .environmentObject(appState)
