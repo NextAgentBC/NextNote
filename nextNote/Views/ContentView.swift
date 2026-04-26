@@ -15,17 +15,20 @@ struct ContentView: View {
     /// app-switch loops (Cmd-Tab / mission control).
     @State private var lastRescanAt: Date = .distantPast
 
-    var body: some View {
-        Group {
-            if preferences.vaultMode && !libraryRoots.isConfigured {
-                LibrarySetupView()
-                    .environmentObject(libraryRoots)
-            } else if appState.isFocusMode {
-                FocusModeView()
-            } else {
-                mainLayout
-            }
+    @ViewBuilder
+    private var rootView: some View {
+        if preferences.vaultMode && !libraryRoots.isConfigured {
+            LibrarySetupView()
+                .environmentObject(libraryRoots)
+        } else if appState.isFocusMode {
+            FocusModeView()
+        } else {
+            mainLayout
         }
+    }
+
+    var body: some View {
+        rootView
         .onAppear {
             libraryRoots.migrateLegacyVaultBookmarkIfNeeded()
             vault.adoptNotesRoot(libraryRoots.notesRoot)
@@ -65,9 +68,6 @@ struct ContentView: View {
                 Task { await rescanLibrary() }
                 appState.triggerRescanLibrary = false
             }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .reembedLibraryRequested)) { _ in
-            Task { @MainActor in await reembedLibrary() }
         }
         // Rescan whenever the window regains focus — user dropped a file in
         // Finder, switches back, expects to see it instantly. Debounced so
@@ -176,17 +176,7 @@ struct ContentView: View {
     }
 
     @MainActor
-    private func reembedLibrary() async {
-        let descriptor = FetchDescriptor<Book>()
-        guard let books = try? modelContext.fetch(descriptor) else { return }
-        try? await appState.embeddingPipeline.embedLibrary(
-            books: books,
-            chapterTextsProvider: { @MainActor book in
-                await EPUBImporter.allChapterTexts(book: book, vault: vault)
-            },
-            progress: nil
-        )
-    }
+    private func reembedLibrary() async {}
 
     // MARK: - Sidebar
 
@@ -210,12 +200,6 @@ struct ContentView: View {
             editorArea
         }
         .toolbar { macToolbar }
-        .overlay(alignment: .bottomTrailing) {
-            FloatingChatBall()
-                .environmentObject(appState)
-                .padding(.trailing, 20)
-                .padding(.bottom, 20)
-        }
         .overlay(alignment: .bottomTrailing) {
             if appState.showShortcuts {
                 ShortcutCheatsheet()

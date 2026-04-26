@@ -24,14 +24,10 @@ final class EPUBImporter {
 
     private let vault: VaultStore
     private let context: ModelContext
-    let aiService: AIService?
-    let embeddingPipeline: EmbeddingPipeline?
 
-    init(vault: VaultStore, context: ModelContext, aiService: AIService? = nil, embeddingPipeline: EmbeddingPipeline? = nil) {
+    init(vault: VaultStore, context: ModelContext) {
         self.vault = vault
         self.context = context
-        self.aiService = aiService
-        self.embeddingPipeline = embeddingPipeline
     }
 
     // MARK: - Caches dir
@@ -185,32 +181,6 @@ final class EPUBImporter {
 
         await vault.scan()
 
-        if BookMetadataAI.titleLooksJunk(book.title), let ai = aiService {
-            let capturedBook = book
-            let capturedVault = vault
-            Task { @MainActor in
-                let chapterText = await Self.firstChapterText(book: capturedBook, vault: capturedVault)
-                let suggestion = try? await BookMetadataAI.suggest(
-                    book: capturedBook, chapterText: chapterText, ai: ai)
-                guard let suggestion, suggestion.title != nil || suggestion.author != nil else { return }
-                capturedBook.aiSuggestion = suggestion
-                try? capturedBook.modelContext?.save()
-            }
-        }
-
-        if let pipeline = embeddingPipeline {
-            let capturedBook = book
-            let capturedVault = vault
-            Task { @MainActor in
-                let chapterTexts = await Self.allChapterTexts(book: capturedBook, vault: capturedVault)
-                do {
-                    try await pipeline.embed(book: capturedBook, chapterTexts: chapterTexts)
-                    try? capturedBook.modelContext?.save()
-                } catch {
-                    capturedBook.embeddingStatus = .pending
-                }
-            }
-        }
 
         return book
     }

@@ -79,19 +79,8 @@ enum PlaylistSynth {
     /// Falls back to the raw folder name if AI is unreachable or returns garbage.
     static func suggestName(
         folderName: String,
-        sampleTitles: [String],
-        ai: AIService? = nil
+        sampleTitles: [String]
     ) async -> String {
-        guard let ai else { return folderName }
-        let samples = sampleTitles.prefix(10).joined(separator: "\n")
-        let prompt = """
-        Suggest one short, clean playlist title for a folder named "\(folderName)" \
-        that contains these tracks:
-        \(samples)
-        Reply with ONLY the title — no quotes, no explanation.
-        """
-        let result = (try? await ai.complete(prompt: prompt, system: nil)) ?? ""
-        let cleaned = result.trimmingCharacters(in: .whitespacesAndNewlines)
-        return cleaned.isEmpty ? folderName : cleaned
+        return folderName
     }
 }

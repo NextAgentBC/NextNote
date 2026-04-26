@@ -129,8 +129,6 @@ extension MediaLibraryView {
         Task {
             let result = await library.generatePlaylistsFromFolders(
                 root: root,
-                useAI: true,
-                ai: appState.aiService,
                 onStatus: { status in
                     playlistGenStatus = status
                 }

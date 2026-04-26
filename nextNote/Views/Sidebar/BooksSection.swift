@@ -22,11 +22,6 @@ struct BooksSection: View {
     @State private var diskFolders: [String] = []
     @State private var dropTargetFolder: String?
 
-    // Semantic search
-    @State private var searchQuery: String = ""
-    @State private var searchTask: Task<Void, Never>? = nil
-    @State private var isSearchActive: Bool = false
-
     // Alert state
     @State private var showNewFolderAlert = false
     @State private var newFolderName = ""
@@ -41,20 +36,12 @@ struct BooksSection: View {
     @State private var tidySelections: Set<UUID> = []
     @State private var showTidySheet = false
 
-    // Per-book AI suggestion confirm state
-    @State private var suggestionTarget: Book? = nil
-
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             sectionHeader
-            semanticSearchBar
-            if isSearchActive {
-                semanticResultsList
-            } else {
             let groups = folderGroups()
             ForEach(groups, id: \.folder) { group in
                 if group.folder.isEmpty {
-                    // Loose books — render directly without a folder header.
                     ForEach(group.books) { book in
                         bookRow(book, indent: 10)
                     }
@@ -62,15 +49,10 @@ struct BooksSection: View {
                     folderGroupView(group)
                 }
             }
-            } // end else (not searching)
         }
         .task {
             refreshDiskFolders()
             reconcileBookPaths()
-            appState.semanticSearch.updateBookCache(books)
-        }
-        .onChange(of: books) { _, newBooks in
-            appState.semanticSearch.updateBookCache(newBooks)
         }
         .onReceive(libraryRoots.$ebooksRoot) { _ in
             refreshDiskFolders()
@@ -111,105 +93,6 @@ struct BooksSection: View {
         .sheet(isPresented: $showTidySheet) {
             tidySheet
         }
-        .sheet(item: $suggestionTarget) { book in
-            aiSuggestionSheet(for: book)
-        }
-    }
-
-    // MARK: - Semantic Search
-
-    private var semanticSearchBar: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 11))
-                .foregroundStyle(.tertiary)
-            TextField("Search content…", text: $searchQuery)
-                .font(.system(size: 12))
-                .textFieldStyle(.plain)
-                .onChange(of: searchQuery) { _, newValue in
-                    searchTask?.cancel()
-                    let query = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if query.isEmpty {
-                        isSearchActive = false
-                        return
-                    }
-                    isSearchActive = true
-                    searchTask = Task {
-                        try? await Task.sleep(for: .milliseconds(500))
-                        guard !Task.isCancelled else { return }
-                        try? await appState.semanticSearch.search(query: query)
-                    }
-                }
-            if !searchQuery.isEmpty {
-                Button {
-                    searchQuery = ""
-                    isSearchActive = false
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-    }
-
-    private var semanticResultsList: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if appState.semanticSearch.isSearching {
-                HStack {
-                    ProgressView().controlSize(.mini)
-                    Text("Searching…").font(.caption).foregroundStyle(.secondary)
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-            } else if appState.semanticSearch.results.isEmpty {
-                Text("No results")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-            } else {
-                ForEach(appState.semanticSearch.results) { result in
-                    semanticResultRow(result)
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func semanticResultRow(_ result: SearchResult) -> some View {
-        Button {
-            if let book = result.book {
-                appState.openBookTab(bookID: book.id, title: book.title)
-                appState.pendingBookAnchor = nil
-            }
-        } label: {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 4) {
-                    Image(systemName: "book.closed")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                    Text(result.documentTitle)
-                        .font(.system(size: 12, weight: .medium))
-                        .lineLimit(1)
-                    Spacer()
-                    Text(String(format: "%.0f%%", result.similarity * 100))
-                        .font(.system(size: 10).monospacedDigit())
-                        .foregroundStyle(.tertiary)
-                }
-                Text(result.chunkContent)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
     }
 
     // MARK: - Header
@@ -247,24 +130,7 @@ struct BooksSection: View {
         .padding(.vertical, 2)
     }
 
-    private func tidyWithAI() {
-        guard let root = libraryRoots.ebooksRoot else { return }
-        isTidying = true
-        let existingFolders = EbookLibraryActions.discoverFolders(under: root)
-        let ai = appState.aiService
-        let booksToTidy = books
-        Task { @MainActor in
-            let proposals = (try? await FolderCategorizer.batchSuggest(
-                books: booksToTidy,
-                existingFolders: existingFolders,
-                ai: ai
-            )) ?? []
-            tidyProposals = proposals.filter { folderKey(for: $0.book) != $0.suggestedFolder }
-            tidySelections = Set(tidyProposals.map { $0.book.id })
-            isTidying = false
-            if !tidyProposals.isEmpty { showTidySheet = true }
-        }
-    }
+    private func tidyWithAI() {}
 
     // MARK: - Grouping
 
@@ -387,22 +253,6 @@ struct BooksSection: View {
                     .font(.system(size: 13))
                     .lineLimit(1)
                 Spacer()
-            }
-            if let suggestion = book.aiSuggestion, let suggestedTitle = suggestion.title {
-                Button {
-                    suggestionTarget = book
-                } label: {
-                    HStack(spacing: 3) {
-                        Image(systemName: "sparkles")
-                            .font(.system(size: 9))
-                        Text(suggestedTitle)
-                            .font(.system(size: 10))
-                            .lineLimit(1)
-                    }
-                    .foregroundStyle(Color.accentColor)
-                }
-                .buttonStyle(.plain)
-                .padding(.leading, 17)
             }
         }
         .foregroundStyle(isActive ? Color.accentColor : .primary)
@@ -696,51 +546,5 @@ struct BooksSection: View {
         refreshDiskFolders()
     }
 
-    // MARK: - Per-book AI suggestion sheet
-
-    @ViewBuilder
-    private func aiSuggestionSheet(for book: Book) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("AI Suggestion")
-                .font(.headline)
-            if let s = book.aiSuggestion {
-                VStack(alignment: .leading, spacing: 8) {
-                    if let title = s.title {
-                        LabeledContent("Suggested Title", value: title)
-                    }
-                    if let author = s.author {
-                        LabeledContent("Suggested Author", value: author)
-                    }
-                    if let summary = s.summary {
-                        Text(summary)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-            HStack {
-                Button("Dismiss") {
-                    book.aiSuggestion = nil
-                    try? modelContext.save()
-                    suggestionTarget = nil
-                }
-                .keyboardShortcut(.cancelAction)
-                Spacer()
-                Button("Apply") {
-                    if let s = book.aiSuggestion {
-                        if let title = s.title, !title.isEmpty { book.title = title }
-                        if let author = s.author, !author.isEmpty { book.author = author }
-                    }
-                    book.aiSuggestion = nil
-                    try? modelContext.save()
-                    suggestionTarget = nil
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(book.aiSuggestion?.title == nil && book.aiSuggestion?.author == nil)
-            }
-        }
-        .padding()
-        .frame(minWidth: 360)
-    }
 }
 

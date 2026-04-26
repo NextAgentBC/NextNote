@@ -13,7 +13,7 @@ enum FileImportRouter {
 
         if !epubs.isEmpty {
             Task { @MainActor in
-                let importer = EPUBImporter(vault: vault, context: modelContext, aiService: appState.aiService)
+                let importer = EPUBImporter(vault: vault, context: modelContext)
                 for url in epubs {
                     do {
                         _ = try await importer.importEPUB(from: url)
@@ -26,7 +26,7 @@ enum FileImportRouter {
 
         if !pdfs.isEmpty {
             Task { @MainActor in
-                let importer = PDFImporter(vault: vault, context: modelContext, aiService: appState.aiService)
+                let importer = PDFImporter(vault: vault, context: modelContext)
                 for url in pdfs {
                     do {
                         _ = try await importer.registerExisting(pdfURL: url)

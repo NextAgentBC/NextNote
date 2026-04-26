@@ -33,7 +33,7 @@ enum MarkdownEmbeds {
     }
 
     static func restore(in text: String) -> String {
-        let pattern = #"%%EMBED_(IMG|VIDEO|AUDIO)_START%%(.+?)%%EMBED_ALT%%(.*?)%%EMBED_END%%"#
+        let pattern = #"%%EMBED_(IMG|VIDEO|AUDIO|YOUTUBE)_START%%(.+?)%%EMBED_ALT%%(.*?)%%EMBED_END%%"#
         guard let regex = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators]) else { return text }
         let ns = text as NSString
         let matches = regex.matches(in: text, range: NSRange(location: 0, length: ns.length))
@@ -60,6 +60,9 @@ enum MarkdownEmbeds {
 
     static func embedKind(for rawSrc: String) -> String {
         let lower = rawSrc.lowercased()
+        if lower.contains("youtube.com") || lower.contains("youtu.be") {
+            return "YOUTUBE"
+        }
         if let dot = lower.lastIndex(of: ".") {
             let ext = String(lower[lower.index(after: dot)...])
             if MediaKind.videoExts.contains(ext) { return "VIDEO" }
@@ -80,8 +83,35 @@ enum MarkdownEmbeds {
             return "<video controls preload=\"metadata\"><source src=\"\(src)\"></video>"
         case "AUDIO":
             return "<audio controls preload=\"metadata\"><source src=\"\(src)\"></audio>"
+        case "YOUTUBE":
+            if let videoID = extractYouTubeID(from: src) {
+                return "<iframe width=\"560\" height=\"315\" src=\"https://www.youtube.com/embed/\(videoID)\" allow=\"accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture\" allowfullscreen style=\"border: none; border-radius: 8px;\"></iframe>"
+            }
+            return "<img src=\"\(src)\" alt=\"\(alt)\">"
         default:
             return "<img src=\"\(src)\" alt=\"\(alt)\">"
         }
+    }
+
+    static func extractYouTubeID(from url: String) -> String? {
+        // Pattern 1: youtube.com/watch?v=VIDEO_ID
+        if url.contains("youtube.com/watch") {
+            let pattern = #"v=([a-zA-Z0-9_-]{11})"#
+            if let regex = try? NSRegularExpression(pattern: pattern),
+               let match = regex.firstMatch(in: url, range: NSRange(url.startIndex..., in: url)),
+               let range = Range(match.range(at: 1), in: url) {
+                return String(url[range])
+            }
+        }
+        // Pattern 2: youtu.be/VIDEO_ID
+        else if url.contains("youtu.be/") {
+            let pattern = #"youtu\.be/([a-zA-Z0-9_-]{11})"#
+            if let regex = try? NSRegularExpression(pattern: pattern),
+               let match = regex.firstMatch(in: url, range: NSRange(url.startIndex..., in: url)),
+               let range = Range(match.range(at: 1), in: url) {
+                return String(url[range])
+            }
+        }
+        return nil
     }
 }

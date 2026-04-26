@@ -50,8 +50,6 @@ extension MediaLibrary {
     @discardableResult
     func generatePlaylistsFromFolders(
         root: URL,
-        useAI: Bool = true,
-        ai: AIService? = nil,
         excludes: Set<String> = PlaylistSynth.defaultExcludes,
         onStatus: @MainActor @escaping (String) -> Void = { _ in }
     ) async -> (created: Int, updated: Int) {
@@ -78,20 +76,7 @@ extension MediaLibrary {
                 .filter { pathSet.contains($0.url.path) }
                 .map { $0.id }
 
-            // AI-cleaned name, or raw folder name on skip/failure.
-            let finalName: String
-            if useAI {
-                let samples = candidate.mediaURLs.prefix(5).map {
-                    $0.deletingPathExtension().lastPathComponent
-                }
-                finalName = await PlaylistSynth.suggestName(
-                    folderName: candidate.folderName,
-                    sampleTitles: Array(samples),
-                    ai: ai
-                )
-            } else {
-                finalName = candidate.folderName
-            }
+            let finalName = candidate.folderName
 
             // Update-in-place if we already have a playlist for this folder.
             if let idx = playlists.firstIndex(where: { $0.sourceFolder == candidate.folderPath }) {

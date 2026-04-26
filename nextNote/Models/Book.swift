@@ -33,11 +33,7 @@ final class Book {
     /// (epub-only) keep decoding cleanly.
     var kindRaw: String?
 
-    /// AI-suggested metadata. Set asynchronously after import when the title
-    /// looks junk. Nil until AI runs; nil after user dismisses.
-    var aiSuggestionData: Data?
-
-    /// AI-suggested folder name. Set by FolderCategorizer. Nil until AI runs.
+    /// AI-suggested folder name. Nil until categorized.
     var suggestedFolder: String?
 
     /// FK to Postgres documents.id in the vector DB. Set after embedding succeeds.
@@ -90,15 +86,6 @@ final class Book {
         set { embeddingStatusRaw = newValue.rawValue }
     }
 
-    var aiSuggestion: BookMetadataSuggestion? {
-        get {
-            guard let data = aiSuggestionData else { return nil }
-            return try? JSONDecoder().decode(BookMetadataSuggestion.self, from: data)
-        }
-        set {
-            aiSuggestionData = try? JSONEncoder().encode(newValue)
-        }
-    }
 }
 
 enum BookKind: String, Codable, CaseIterable {

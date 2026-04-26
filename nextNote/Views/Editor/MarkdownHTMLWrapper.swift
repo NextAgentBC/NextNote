@@ -57,6 +57,7 @@ enum MarkdownHTMLWrapper {
             img { max-width: 100%; border-radius: 8px; margin: 8px 0; }
             video { max-width: 100%; border-radius: 8px; margin: 8px 0; }
             audio { width: 100%; margin: 8px 0; }
+            iframe { max-width: 100%; border-radius: 8px; margin: 8px 0; display: block; aspect-ratio: 16 / 9; height: auto; }
             .katex-display { overflow-x: auto; overflow-y: hidden; padding: 4px 0; }
         </style>
         </head>
