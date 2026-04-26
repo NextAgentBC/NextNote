@@ -179,7 +179,7 @@ enum MediaCategorizer {
             throw CategorizeError.moveFailed(error.localizedDescription)
         }
 
-        let dest = uniqueDestination(for: url.lastPathComponent, in: dir)
+        let dest = FileDestinations.unique(for: url.lastPathComponent, in: dir)
         do {
             try FileManager.default.moveItem(at: url, to: dest)
         } catch {
@@ -245,23 +245,6 @@ enum MediaCategorizer {
         return out
     }
 
-    private static func uniqueDestination(for filename: String, in dir: URL) -> URL {
-        let fm = FileManager.default
-        var dest = dir.appendingPathComponent(filename)
-        if !fm.fileExists(atPath: dest.path) { return dest }
-
-        let base = (filename as NSString).deletingPathExtension
-        let ext = (filename as NSString).pathExtension
-        var n = 2
-        while true {
-            let candidate = ext.isEmpty
-                ? "\(base) (\(n))"
-                : "\(base) (\(n)).\(ext)"
-            dest = dir.appendingPathComponent(candidate)
-            if !fm.fileExists(atPath: dest.path) { return dest }
-            n += 1
-        }
-    }
 }
 
 private extension String {

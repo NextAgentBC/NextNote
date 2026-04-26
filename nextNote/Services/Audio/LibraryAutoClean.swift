@@ -89,7 +89,7 @@ enum LibraryAutoClean {
                     continue
                 }
                 if FileManager.default.fileExists(atPath: destURL.path) {
-                    destURL = uniqueDestination(base: newBase, ext: ext, in: destDir)
+                    destURL = FileDestinations.unique(base: newBase, ext: ext, in: destDir)
                 }
 
                 try FileManager.default.moveItem(at: track.url, to: destURL)
@@ -125,17 +125,6 @@ enum LibraryAutoClean {
         return parts.joined(separator: " & ")
     }
 
-    private static func uniqueDestination(base: String, ext: String, in dir: URL) -> URL {
-        var n = 2
-        while true {
-            let candidate = ext.isEmpty
-                ? "\(base) (\(n))"
-                : "\(base) (\(n)).\(ext)"
-            let url = dir.appendingPathComponent(candidate)
-            if !FileManager.default.fileExists(atPath: url.path) { return url }
-            n += 1
-        }
-    }
 }
 
 private extension String {

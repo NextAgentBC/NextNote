@@ -279,9 +279,7 @@ struct VaultTreeView: View {
 
         #if os(macOS)
         Button {
-            if let url = vault.url(for: node.relativePath) {
-                NSWorkspace.shared.activateFileViewerSelecting([url])
-            }
+            FinderActions.reveal(vault.url(for: node.relativePath))
         } label: {
             Label("Reveal in Finder", systemImage: "folder")
         }
@@ -519,12 +517,7 @@ struct VaultTreeView: View {
         } else {
             src = node.relativePath
         }
-        let markdown = "![\(title)](\(src))"
-
-        #if os(macOS)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(markdown, forType: .string)
-        #endif
+        PasteboardActions.copyMarkdownEmbed(title: title, path: src)
     }
 
     /// Pure-string path math: compute a POSIX relative path between two

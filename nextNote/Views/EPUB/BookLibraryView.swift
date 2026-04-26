@@ -143,10 +143,7 @@ struct BookLibraryView: View {
     }
 
     private func revealInFinder(_ book: Book) {
-        #if os(macOS)
-        guard let url = EPUBImporter.resolveFileURL(book.relativePath, vault: vault) else { return }
-        NSWorkspace.shared.activateFileViewerSelecting([url])
-        #endif
+        FinderActions.reveal(EPUBImporter.resolveFileURL(book.relativePath, vault: vault))
     }
 
     private func remove(_ book: Book) {

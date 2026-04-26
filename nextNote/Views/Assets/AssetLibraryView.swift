@@ -406,7 +406,7 @@ struct AssetLibraryView: View {
             // is currently viewing a specific folder — then land it there
             // so "what I see after drop" matches intent.
             let targetDir = resolveImportTarget(root: root, kind: kind)
-            let dest = uniqueDestination(for: src.lastPathComponent, in: targetDir)
+            let dest = FileDestinations.unique(for: src.lastPathComponent, in: targetDir)
             do {
                 try fm.copyItem(at: src, to: dest)
                 imported += 1
@@ -471,10 +471,10 @@ struct AssetLibraryView: View {
             // Only move files that actually live under our assets root
             // (dragging arbitrary URLs from Finder onto a folder row
             // shouldn't relocate arbitrary files).
-            guard isAssetURL(src, under: root) else { continue }
+            guard AssetURL.isUnder(src, root: root) else { continue }
             let sourceDirPath = src.deletingLastPathComponent().standardizedFileURL.path
             guard sourceDirPath != destPath else { continue }
-            let dest = uniqueDestination(for: src.lastPathComponent, in: destDir)
+            let dest = FileDestinations.unique(for: src.lastPathComponent, in: destDir)
             do {
                 try fm.moveItem(at: src, to: dest)
                 moved += 1
@@ -486,12 +486,6 @@ struct AssetLibraryView: View {
         if moved > 0 {
             Task { await assetCatalog.scan(root: libraryRoots.assetsRoot) }
         }
-    }
-
-    private func isAssetURL(_ url: URL, under root: URL) -> Bool {
-        let rootPath = root.standardizedFileURL.path
-        let path = url.standardizedFileURL.path
-        return path.hasPrefix(rootPath + "/")
     }
 
     private func commitNewFolder() {
@@ -582,7 +576,7 @@ struct AssetLibraryView: View {
 
         let stamp = Self.pasteTimestamp()
         let targetDir = resolveImportTarget(root: root, kind: .image)
-        let dest = uniqueDestination(for: "pasted-\(stamp).png", in: targetDir)
+        let dest = FileDestinations.unique(for: "pasted-\(stamp).png", in: targetDir)
         do {
             try png.write(to: dest, options: .atomic)
             Task {
@@ -602,25 +596,15 @@ struct AssetLibraryView: View {
     }
 
     private func revealInFinder(_ asset: AssetCatalog.Asset) {
-        #if os(macOS)
-        NSWorkspace.shared.activateFileViewerSelecting([asset.url])
-        #endif
+        FinderActions.reveal(asset.url)
     }
 
     private func revealRootInFinder() {
-        #if os(macOS)
-        if let root = libraryRoots.assetsRoot {
-            NSWorkspace.shared.activateFileViewerSelecting([root])
-        }
-        #endif
+        FinderActions.reveal(libraryRoots.assetsRoot)
     }
 
     private func copyEmbedMarkdown(_ asset: AssetCatalog.Asset) {
-        #if os(macOS)
-        let md = "![\(asset.title)](\(asset.url.path))"
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(md, forType: .string)
-        #endif
+        PasteboardActions.copyMarkdownEmbed(title: asset.title, path: asset.url.path)
     }
 
     private func trash(_ asset: AssetCatalog.Asset) {
@@ -633,19 +617,6 @@ struct AssetLibraryView: View {
         deleteTarget = nil
     }
 
-    private func uniqueDestination(for filename: String, in dir: URL) -> URL {
-        let fm = FileManager.default
-        let url = dir.appendingPathComponent(filename)
-        if !fm.fileExists(atPath: url.path) { return url }
-
-        let ext = url.pathExtension
-        let stem = url.deletingPathExtension().lastPathComponent
-        for n in 2... {
-            let candidate = dir.appendingPathComponent("\(stem)-\(n).\(ext)")
-            if !fm.fileExists(atPath: candidate.path) { return candidate }
-        }
-        return url
-    }
 }
 
 // MARK: - Cell

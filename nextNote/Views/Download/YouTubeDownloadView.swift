@@ -219,7 +219,7 @@ struct YouTubeDownloadView: View {
                         .truncationMode(.middle)
                     Spacer()
                     Button("Reveal") {
-                        NSWorkspace.shared.activateFileViewerSelecting([out])
+                        FinderActions.reveal(out)
                     }
                 }
                 .font(.caption)
@@ -330,10 +330,7 @@ struct YouTubeDownloadView: View {
                         .font(.caption.monospaced())
                         .textSelection(.enabled)
                     Button {
-                        #if os(macOS)
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(command, forType: .string)
-                        #endif
+                        PasteboardActions.copy(command)
                     } label: {
                         Image(systemName: "doc.on.doc")
                             .font(.caption)
@@ -419,9 +416,7 @@ struct YouTubeDownloadView: View {
                         try? FileManager.default.createDirectory(
                             at: bucketDir, withIntermediateDirectories: true
                         )
-                        let dest: URL = await MainActor.run {
-                            uniqueDestination(for: src.lastPathComponent, in: bucketDir)
-                        }
+                        let dest = FileDestinations.unique(for: src.lastPathComponent, in: bucketDir)
                         do {
                             try FileManager.default.moveItem(at: src, to: dest)
                             finalURL = dest
@@ -497,19 +492,6 @@ struct YouTubeDownloadView: View {
     }
 
     // MARK: - Helpers
-
-    private func uniqueDestination(for filename: String, in dir: URL) -> URL {
-        let fm = FileManager.default
-        let url = dir.appendingPathComponent(filename)
-        if !fm.fileExists(atPath: url.path) { return url }
-        let ext = url.pathExtension
-        let stem = url.deletingPathExtension().lastPathComponent
-        for n in 2... {
-            let candidate = dir.appendingPathComponent("\(stem)-\(n).\(ext)")
-            if !fm.fileExists(atPath: candidate.path) { return candidate }
-        }
-        return url
-    }
 
     // MARK: - Search
 

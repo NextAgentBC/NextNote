@@ -64,7 +64,7 @@ enum MediaFolderMerger {
                     moved += sub.movedCount
                     skipped += sub.skippedCount
                 } else {
-                    let dest = uniqueDestination(for: entry.lastPathComponent, in: tgt)
+                    let dest = FileDestinations.unique(for: entry.lastPathComponent, in: tgt)
                     do {
                         try fm.moveItem(at: entry, to: dest)
                         moved += 1
@@ -96,18 +96,4 @@ enum MediaFolderMerger {
         return isDir.boolValue
     }
 
-    private static func uniqueDestination(for filename: String, in dir: URL) -> URL {
-        let fm = FileManager.default
-        var dest = dir.appendingPathComponent(filename)
-        if !fm.fileExists(atPath: dest.path) { return dest }
-        let base = (filename as NSString).deletingPathExtension
-        let ext = (filename as NSString).pathExtension
-        var n = 2
-        while true {
-            let candidate = ext.isEmpty ? "\(base) (\(n))" : "\(base) (\(n)).\(ext)"
-            dest = dir.appendingPathComponent(candidate)
-            if !fm.fileExists(atPath: dest.path) { return dest }
-            n += 1
-        }
-    }
 }

@@ -916,9 +916,7 @@ struct MediaLibraryView: View {
                 Divider()
                 Button("Reveal in Finder") {
                     let urls = tracks.filter { ids.contains($0.id) }.map { $0.url }
-                    if !urls.isEmpty {
-                        NSWorkspace.shared.activateFileViewerSelecting(urls)
-                    }
+                    FinderActions.reveal(urls)
                 }
             }
         }

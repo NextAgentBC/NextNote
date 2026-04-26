@@ -289,11 +289,7 @@ struct BooksSection: View {
     }
 
     private func revealInFinder(_ book: Book) {
-        #if os(macOS)
-        if let url = EPUBImporter.resolveFileURL(book.relativePath, vault: vaultEnv) {
-            NSWorkspace.shared.activateFileViewerSelecting([url])
-        }
-        #endif
+        FinderActions.reveal(EPUBImporter.resolveFileURL(book.relativePath, vault: vaultEnv))
     }
 
     private func remove(_ book: Book) {
