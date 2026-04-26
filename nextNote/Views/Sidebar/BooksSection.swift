@@ -271,19 +271,59 @@ struct BooksSection: View {
     private func jumpTOC(book: Book, href: String) {
         openBook(book)
         let parts = href.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)
-        let path = parts.first.map(String.init) ?? href
+        let rawPath = parts.first.map(String.init) ?? href
         let anchor = parts.count > 1 ? String(parts[1]) : ""
-        let tocFile = (path as NSString).lastPathComponent
-        let spine = decodeSpine(book)
 
-        guard let idx = spine.firstIndex(where: {
-            let sh = $0.href.split(separator: "#").first.map(String.init) ?? $0.href
-            return (sh as NSString).lastPathComponent == tocFile
-        }) else { return }
+        // Anchor-only entry (`#section`) — keep current chapter, jump to anchor.
+        if rawPath.isEmpty {
+            appState.pendingBookAnchor = anchor.isEmpty ? nil : anchor
+            try? modelContext.save()
+            return
+        }
+
+        let spine = decodeSpine(book)
+        let path = rawPath.removingPercentEncoding ?? rawPath
+        let tocFile = (path as NSString).lastPathComponent
+
+        // Multi-strategy spine lookup:
+        //   1. Full path match after URL-decoding both sides (handles
+        //      `Text/cover.xhtml`-style nested entries unambiguously).
+        //   2. lastPathComponent match (covers EPUBs where the TOC uses
+        //      a different relative prefix than the spine).
+        //   3. lastPathComponent match without extension (for the
+        //      occasional EPUB where TOC drops `.xhtml`).
+        let idx: Int? = {
+            let normalizedTOCPath = (path as NSString).standardizingPath
+            let tocStem = (tocFile as NSString).deletingPathExtension
+
+            let entries = spine.enumerated().map { (i: Int, e: BookSpineEntry) -> (Int, String, String, String) in
+                let raw = e.href.split(separator: "#").first.map(String.init) ?? e.href
+                let decoded = raw.removingPercentEncoding ?? raw
+                let standardized = (decoded as NSString).standardizingPath
+                let last = (decoded as NSString).lastPathComponent
+                return (i, standardized, last, (last as NSString).deletingPathExtension)
+            }
+
+            if let m = entries.first(where: { $0.1 == normalizedTOCPath }) { return m.0 }
+            if let m = entries.first(where: { $0.2 == tocFile }) { return m.0 }
+            if !tocStem.isEmpty,
+               let m = entries.first(where: { $0.3 == tocStem }) { return m.0 }
+            return nil
+        }()
+
+        guard let idx else {
+            NSLog("[BooksSection] jumpTOC: no spine match for href=\(href) (path=\(path), file=\(tocFile))")
+            return
+        }
 
         appState.pendingBookAnchor = anchor.isEmpty ? nil : anchor
         if book.lastChapterIndex != idx {
             book.lastChapterIndex = idx
+            book.lastScrollRatio = 0
+        } else if !anchor.isEmpty {
+            // Same chapter, anchor-only navigation. Force scroll-position
+            // reset so onChange of pendingBookAnchor in the reader fires
+            // even when the value happens to equal the previous one.
             book.lastScrollRatio = 0
         }
         try? modelContext.save()
