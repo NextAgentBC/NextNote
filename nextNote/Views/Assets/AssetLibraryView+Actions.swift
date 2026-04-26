@@ -52,15 +52,7 @@ extension AssetLibraryView {
             try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             return dir
         }
-        let bucket: String
-        switch kind {
-        case .image: bucket = "images"
-        case .video: bucket = "videos"
-        case .audio: bucket = "audio"
-        }
-        let dir = root.appendingPathComponent(bucket, isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir
+        return AssetLibraryActions.bucketDirectory(for: kind, root: root)
     }
 
     /// Move existing assets into a different folder. Triggered by dragging
@@ -109,15 +101,10 @@ extension AssetLibraryView {
         let name = newFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
         newFolderName = ""
         guard !name.isEmpty else { return }
-        // Guard against path separators — keep new folders at the first
-        // level under the assets root.
-        let safe = name.replacingOccurrences(of: "/", with: "-")
-            .replacingOccurrences(of: ":", with: "-")
         guard let root = libraryRoots.ensureAssetsRoot() else { return }
-        let dir = root.appendingPathComponent(safe, isDirectory: true)
         do {
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            folderFilter = safe
+            let dir = try AssetLibraryActions.createFolder(named: name, under: root)
+            folderFilter = dir.lastPathComponent
             Task { await assetCatalog.scan(root: libraryRoots.assetsRoot) }
         } catch {
             importError = "Create folder failed: \(error.localizedDescription)"

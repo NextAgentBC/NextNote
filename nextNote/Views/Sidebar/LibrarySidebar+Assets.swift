@@ -100,26 +100,11 @@ extension LibrarySidebar {
     /// Finder and from the Media sidebar rows.
     func importToAssets(_ urls: [URL]) -> Bool {
         guard let root = libraryRoots.ensureAssetsRoot() else { return false }
-        let fm = FileManager.default
         var imported = 0
         for src in urls {
             guard let kind = MediaKind.from(url: src) else { continue }
-            let bucket: String
-            switch kind {
-            case .image: bucket = "images"
-            case .video: bucket = "videos"
-            case .audio: bucket = "audio"
-            }
-            let dir = root.appendingPathComponent(bucket, isDirectory: true)
-            try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
-            let dest = FileDestinations.unique(for: src.lastPathComponent, in: dir)
-            do {
-                try fm.copyItem(at: src, to: dest)
-                imported += 1
-            } catch {
-                // Silent — drop UI doesn't have error surface. Skipped
-                // files just won't appear.
-            }
+            let dir = AssetLibraryActions.bucketDirectory(for: kind, root: root)
+            imported += AssetLibraryActions.importByCopy([src], to: dir)
         }
         guard imported > 0 else { return false }
         Task { await assetCatalog.scan(root: libraryRoots.assetsRoot) }
@@ -276,14 +261,10 @@ extension LibrarySidebar {
         let raw = newAssetFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
         newAssetFolderName = ""
         guard !raw.isEmpty else { return }
-        let name = raw
-            .replacingOccurrences(of: "/", with: "-")
-            .replacingOccurrences(of: ":", with: "-")
         guard let root = libraryRoots.ensureAssetsRoot() else { return }
         do {
-            let dir = root.appendingPathComponent(name, isDirectory: true)
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            collapsedAssetFolders.remove("asset/\(name)")
+            let dir = try AssetLibraryActions.createFolder(named: raw, under: root)
+            collapsedAssetFolders.remove("asset/\(dir.lastPathComponent)")
             Task { await assetCatalog.scan(root: libraryRoots.assetsRoot) }
         } catch {
             assetError = "Create folder failed: \(error.localizedDescription)"
@@ -294,33 +275,14 @@ extension LibrarySidebar {
         guard let root = libraryRoots.ensureAssetsRoot() else { return false }
         let destination = assetFolderURL(folder) ?? root
         do {
-            try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+            let changed = try AssetLibraryActions.moveOrImport(urls, to: destination, root: root)
+            guard changed > 0 else { return false }
+            Task { await assetCatalog.scan(root: libraryRoots.assetsRoot) }
+            return true
         } catch {
             assetError = "Move failed: \(error.localizedDescription)"
             return false
         }
-
-        var changed = 0
-        for src in urls {
-            guard MediaKind.from(url: src) != nil else { continue }
-            let dest = FileDestinations.unique(for: src.lastPathComponent, in: destination)
-            do {
-                if AssetURL.isUnder(src, root: root) {
-                    let srcDir = src.deletingLastPathComponent().standardizedFileURL.path
-                    guard srcDir != destination.standardizedFileURL.path else { continue }
-                    try FileManager.default.moveItem(at: src, to: dest)
-                } else {
-                    try FileManager.default.copyItem(at: src, to: dest)
-                }
-                changed += 1
-            } catch {
-                assetError = "Move failed: \(error.localizedDescription)"
-                return false
-            }
-        }
-        guard changed > 0 else { return false }
-        Task { await assetCatalog.scan(root: libraryRoots.assetsRoot) }
-        return true
     }
 
     func assetFolderURL(_ folder: String) -> URL? {
