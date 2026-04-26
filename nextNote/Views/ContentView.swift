@@ -2,13 +2,13 @@ import SwiftUI
 import SwiftData
 
 struct ContentView: View {
-    @EnvironmentObject private var appState: AppState
-    @EnvironmentObject private var vault: VaultStore
-    @EnvironmentObject private var libraryRoots: LibraryRoots
-    @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject var appState: AppState
+    @EnvironmentObject var vault: VaultStore
+    @EnvironmentObject var libraryRoots: LibraryRoots
+    @Environment(\.modelContext) var modelContext
     @Environment(\.scenePhase) private var scenePhase
     @Query(sort: \TextDocument.modifiedAt, order: .reverse) private var documents: [TextDocument]
-    @StateObject private var preferences = UserPreferences.shared
+    @StateObject var preferences = UserPreferences.shared
     @State var showAIPanel = false
     @State var showSettings = false
     @State private var showAmbientFolderPrompt = false

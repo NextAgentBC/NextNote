@@ -1,6 +1,7 @@
 import Foundation
 
 enum ChatSessionRouter {
+    @MainActor
     static func sync(appState: AppState, vault: VaultStore, preferences: UserPreferences) {
         appState.activeChatSession?.saveNow()
 
