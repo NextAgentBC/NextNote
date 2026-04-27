@@ -16,47 +16,77 @@ struct TerminalContainerView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            Divider()
             TerminalPane(
                 workingDirectory: workingDirectory,
                 pendingCommand: $appState.pendingTerminalCommand,
                 onMake: { terminalRef = $0 }
             )
         }
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+        )
+        .padding(.horizontal, 8)
+        .padding(.top, 6)
+        .padding(.bottom, 4)
     }
 
     private var header: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
+            // Status dot
+            Circle()
+                .fill(Color(red: 0.22, green: 0.82, blue: 0.42))
+                .frame(width: 7, height: 7)
+
             Image(systemName: "terminal")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.tertiary)
+
             Text(displayPath)
-                .font(.caption.monospaced())
+                .font(.system(size: 11, design: .monospaced))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
+
             Spacer()
+
             Button {
                 clearTerminal()
             } label: {
-                Image(systemName: "eraser")
-                    .font(.system(size: 11))
+                Image(systemName: "eraser.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.plain)
             .help("Clear terminal")
 
             Button {
                 appState.showTerminal = false
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.tertiary)
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.plain)
             .help("Close terminal (⌘⇧T)")
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(.bar)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background {
+            // Glass header blending into dark terminal below
+            ZStack {
+                Color(red: 0.145, green: 0.145, blue: 0.153)
+                Rectangle()
+                    .fill(.ultraThinMaterial)
+                    .opacity(0.3)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Color.white.opacity(0.06))
+                .frame(height: 1)
+        }
     }
 
     private var displayPath: String {

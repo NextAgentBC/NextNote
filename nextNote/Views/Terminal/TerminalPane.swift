@@ -21,38 +21,38 @@ struct TerminalPane: NSViewRepresentable {
     func makeNSView(context: Context) -> LocalProcessTerminalView {
         let view = LocalProcessTerminalView(frame: .zero)
         view.processDelegate = context.coordinator
-        applyLightTheme(view)
-        view.feed(text: "\u{001B}[90mnextNote terminal — cwd is your vault root\u{001B}[0m\r\n")
+        applyDarkTheme(view)
+        view.feed(text: "\u{001B}[38;5;240mnextNote terminal\u{001B}[0m\r\n")
         launch(in: view)
         onMake?(view)
         return view
     }
 
-    /// Match the rest of the app (light chrome). SwiftTerm defaults to a
-    /// dark terminal; force a near-white background + near-black foreground
-    /// plus a muted ANSI palette so colorized CLI output stays legible
-    /// against a bright surface.
-    private func applyLightTheme(_ view: LocalProcessTerminalView) {
-        view.nativeBackgroundColor = NSColor(white: 0.98, alpha: 1.0)
-        view.nativeForegroundColor = NSColor(white: 0.12, alpha: 1.0)
-        // 16-color ANSI palette tuned for light backgrounds (Solarized-light-ish).
+    private func applyDarkTheme(_ view: LocalProcessTerminalView) {
+        // Apple system dark surface (#1C1C1E) — matches macOS dark mode chrome.
+        view.nativeBackgroundColor = NSColor(red: 0.110, green: 0.110, blue: 0.118, alpha: 1.0)
+        view.nativeForegroundColor = NSColor(red: 0.839, green: 0.839, blue: 0.839, alpha: 1.0)
+        if let font = NSFont(name: "SF Mono", size: 13) ?? NSFont.monospacedSystemFont(ofSize: 13, weight: .regular) as NSFont? {
+            view.font = font
+        }
+        // ANSI palette — Ghostty-inspired, tuned for #1C1C1E background.
         let palette: [SwiftTerm.Color] = [
-            .init(red: 0x0000, green: 0x0000, blue: 0x0000), // black
-            .init(red: 0xc0c0, green: 0x1717, blue: 0x1717), // red
-            .init(red: 0x1e1e, green: 0x8080, blue: 0x2020), // green
-            .init(red: 0xa0a0, green: 0x5d5d, blue: 0x0a0a), // yellow
-            .init(red: 0x1d1d, green: 0x4e4e, blue: 0xd8d8), // blue
-            .init(red: 0x8c8c, green: 0x1c1c, blue: 0x9e9e), // magenta
-            .init(red: 0x0808, green: 0x7878, blue: 0x8c8c), // cyan
-            .init(red: 0xbdbd, green: 0xbdbd, blue: 0xbdbd), // white (light grey)
-            .init(red: 0x5a5a, green: 0x5a5a, blue: 0x5a5a), // bright black
-            .init(red: 0xe0e0, green: 0x2b2b, blue: 0x2b2b), // bright red
-            .init(red: 0x2828, green: 0xa0a0, blue: 0x3030), // bright green
-            .init(red: 0xb9b9, green: 0x7070, blue: 0x1c1c), // bright yellow
-            .init(red: 0x3e3e, green: 0x6e6e, blue: 0xe9e9), // bright blue
-            .init(red: 0xb2b2, green: 0x2929, blue: 0xc3c3), // bright magenta
-            .init(red: 0x1111, green: 0x9494, blue: 0xa8a8), // bright cyan
-            .init(red: 0x3434, green: 0x3434, blue: 0x3434)  // bright white (dark text)
+            .init(red: 0x3b3b, green: 0x3b3b, blue: 0x3b3b), // black
+            .init(red: 0xf1f1, green: 0x4c4c, blue: 0x4c4c), // red
+            .init(red: 0x2323, green: 0xd1d1, blue: 0x8b8b), // green
+            .init(red: 0xe3e3, green: 0xb3b3, blue: 0x4141), // yellow
+            .init(red: 0x3b3b, green: 0x8e8e, blue: 0xeaea), // blue
+            .init(red: 0xd6d6, green: 0x7070, blue: 0xd6d6), // magenta
+            .init(red: 0x2929, green: 0xb8b8, blue: 0xdbdb), // cyan
+            .init(red: 0xe5e5, green: 0xe5e5, blue: 0xe5e5), // white
+            .init(red: 0x6666, green: 0x6666, blue: 0x6666), // bright black
+            .init(red: 0xf1f1, green: 0x8989, blue: 0x7f7f), // bright red
+            .init(red: 0x3f3f, green: 0xb9b9, blue: 0x5050), // bright green
+            .init(red: 0xd2d2, green: 0x9999, blue: 0x2222), // bright yellow
+            .init(red: 0x7979, green: 0xc0c0, blue: 0xffff), // bright blue
+            .init(red: 0xd2d2, green: 0xa8a8, blue: 0xffff), // bright magenta
+            .init(red: 0x5656, green: 0xd4d4, blue: 0xdddd), // bright cyan
+            .init(red: 0xe6e6, green: 0xeded, blue: 0xf3f3), // bright white
         ]
         view.installColors(palette)
     }
