@@ -60,7 +60,9 @@ struct TerminalPane: NSViewRepresentable {
     func updateNSView(_ nsView: LocalProcessTerminalView, context: Context) {
         if let cmd = pendingCommand, !cmd.isEmpty {
             nsView.send(txt: cmd + "\n")
-            DispatchQueue.main.async { self.pendingCommand = nil }
+            // Defer the binding write to the next runloop tick so we don't
+            // mutate state inside SwiftUI's view-update phase.
+            Task { @MainActor in pendingCommand = nil }
         }
     }
 

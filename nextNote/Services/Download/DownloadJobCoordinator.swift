@@ -62,7 +62,7 @@ final class DownloadJobCoordinator: ObservableObject {
             autoClassify: autoClassify
         )
         ctx.insert(job)
-        try? ctx.save()
+        saveOrLog(ctx)
         pumpQueue(library: library, player: player)
         return job.id
     }
@@ -74,7 +74,7 @@ final class DownloadJobCoordinator: ObservableObject {
         if job.status == .downloading || job.status == .transcoding || job.status == .queued {
             job.status = .canceled
             job.updatedAt = Date()
-            try? modelContext.save()
+            saveOrLog(modelContext)
         }
         if running == jobID { running = nil }
     }
@@ -95,7 +95,7 @@ final class DownloadJobCoordinator: ObservableObject {
         job.statusLine = "Queued"
         job.errorMessage = nil
         job.updatedAt = Date()
-        try? ctx.save()
+        saveOrLog(ctx)
         pumpQueue(library: library, player: player)
     }
 
@@ -103,7 +103,7 @@ final class DownloadJobCoordinator: ObservableObject {
         cancel(jobID, modelContext: modelContext)
         guard let job = fetch(jobID, in: modelContext) else { return }
         modelContext.delete(job)
-        try? modelContext.save()
+        saveOrLog(modelContext)
     }
 
     /// Progress callback target — called by the download Task back on
@@ -117,6 +117,17 @@ final class DownloadJobCoordinator: ObservableObject {
     }
 
     // MARK: - Queue
+
+    /// Persist + log on failure. Replaces the previous `try? ctx.save()`
+    /// pattern that silently dropped errors and let the UI render stale
+    /// state.
+    private func saveOrLog(_ ctx: ModelContext, function: StaticString = #function) {
+        do {
+            try ctx.save()
+        } catch {
+            print("[DownloadJobCoordinator.\(function)] save failed: \(error.localizedDescription)")
+        }
+    }
 
     private func fetch(_ id: UUID, in modelContext: ModelContext) -> DownloadJob? {
         let descriptor = FetchDescriptor<DownloadJob>(
@@ -169,7 +180,7 @@ final class DownloadJobCoordinator: ObservableObject {
             job.status = .failed
             job.errorMessage = "yt-dlp / download folder not configured."
             job.updatedAt = Date()
-            try? modelContext.save()
+            saveOrLog(modelContext)
             return
         }
 
@@ -178,7 +189,7 @@ final class DownloadJobCoordinator: ObservableObject {
         job.progress = 0
         job.statusLine = "Starting…"
         job.updatedAt = Date()
-        try? modelContext.save()
+        saveOrLog(modelContext)
 
         let chosenMode: YTDLPDownloader.Mode = job.mode == .audio ? .audio : .video
         let quality = YTDLPDownloader.Quality(rawValue: job.qualityRaw) ?? .best
@@ -210,7 +221,7 @@ final class DownloadJobCoordinator: ObservableObject {
             job.title = result.metadata.title
             job.uploader = result.metadata.uploader
             job.statusLine = "Organizing…"
-            try? modelContext.save()
+            saveOrLog(modelContext)
 
             var finalURL = result.outputURL
 
@@ -227,10 +238,10 @@ final class DownloadJobCoordinator: ObservableObject {
                         job.statusLine = "Move to Assets failed: \(error.localizedDescription) — kept in download folder."
                     }
                 }
-            } else if autoClassify {
+            } else if autoClassify && (UserDefaults.standard.object(forKey: "media.autoOrganizeOnYTDownload") as? Bool ?? true) {
                 job.phase = .classify
                 job.statusLine = "Classifying…"
-                try? modelContext.save()
+                saveOrLog(modelContext)
                 let m = result.metadata
                 let ctx = MediaCategorizer.Context(
                     uploader: m.uploader,
@@ -276,7 +287,7 @@ final class DownloadJobCoordinator: ObservableObject {
                !job.statusLine.hasPrefix("Move to Assets failed") {
                 job.statusLine = "Done"
             }
-            try? modelContext.save()
+            saveOrLog(modelContext)
 
         } catch is CancellationError {
             // Already handled by cancel() — do nothing.
@@ -287,7 +298,7 @@ final class DownloadJobCoordinator: ObservableObject {
                 job.statusLine = error.localizedDescription
                 job.phase = .idle
                 job.updatedAt = Date()
-                try? modelContext.save()
+                saveOrLog(modelContext)
             }
         }
     }

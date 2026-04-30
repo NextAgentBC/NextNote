@@ -116,6 +116,12 @@ extension ContentView {
                         Label(mode.rawValue, systemImage: mode.iconName)
                     }
                 }
+                Divider()
+                Button {
+                    appState.triggerFloatingPreviewToggle = true
+                } label: {
+                    Label("Pop Out Preview…", systemImage: "rectangle.inset.filled.and.arrow.up.right")
+                }
             } label: {
                 Image(systemName: appState.previewMode.iconName)
                     .accessibilityLabel("Preview Mode")

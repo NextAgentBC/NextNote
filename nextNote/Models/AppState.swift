@@ -48,6 +48,11 @@ final class AppState: ObservableObject {
     @Published var showShortcuts: Bool = false
     /// Floating AI chat ball — ⌘⇧K toggles.
     @Published var showChatBall: Bool = false
+    /// One-shot toggle for the floating markdown-preview window. ContentView
+    /// observes this and calls `PreviewWindowController.shared.show(...)`
+    /// (or `.close()`) — the actual window lives outside the SwiftUI scene
+    /// so it can be screen-shared independently and pinned above other apps.
+    @Published var triggerFloatingPreviewToggle: Bool = false
     /// Active book — derived from the active tab's `bookID`. Kept as a
     /// convenience @Published so non-tab surfaces (sidebar highlights) don't
     /// have to poke into openTabs.
@@ -66,6 +71,19 @@ final class AppState: ObservableObject {
     @Published var pendingBookAnchor: String? = nil
     /// One-shot trigger from View > Rescan Library.
     @Published var triggerRescanLibrary: Bool = false
+
+    /// One-shot trigger from File > Export > PDF…
+    @Published var triggerExportPDF: Bool = false
+
+    /// One-shot Media-menu triggers — the Media Library sheet observes
+    /// these and runs the matching action when it becomes visible.
+    @Published var triggerRestoreTitles: Bool = false
+    @Published var triggerOrganizeLibrary: Bool = false
+    @Published var triggerRescanMedia: Bool = false
+
+    /// Reconcile / dedupe library sheet — toggled from Media menu or the
+    /// Media Library sheet's toolbar.
+    @Published var showReconcileLibrary: Bool = false
 
     // MARK: - Save trigger
     // Set to true by Cmd+S / menu; ContentView observes, calls modelContext.save(), resets to false.

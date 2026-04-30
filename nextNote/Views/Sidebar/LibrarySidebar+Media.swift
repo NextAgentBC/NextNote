@@ -108,6 +108,9 @@ extension LibrarySidebar {
             Button("Enqueue") { enqueueGroup(group) }
                 .disabled(group.items.isEmpty)
             Divider()
+            Button("Auto-organize (AI)") { organizeGroup(group) }
+                .disabled(group.items.isEmpty || libraryRoots.mediaRoot == nil)
+            Divider()
             Button("Reveal in Finder") {
                 FinderActions.reveal(folderURL)
             }
@@ -147,20 +150,12 @@ extension LibrarySidebar {
         // the markdown editor (to embed via `![](path)`).
         .draggable(track.url)
         .contextMenu {
-            Button("Play") { playFile(track) }
-            Button("Enqueue") { enqueueFile(track) }
-            Divider()
-            Button("Add to Assets") { _ = importToAssets([track.url]) }
-            Button("Reveal in Finder") {
-                FinderActions.reveal(track.url)
-            }
-            Divider()
-            Button("Remove from Library") {
-                mediaLibrary.removeTrack(id: track.id)
-            }
-            Button("Move to Trash", role: .destructive) {
-                _ = mediaLibrary.trashTrack(id: track.id)
-            }
+            trackContextMenu(
+                track: track,
+                onRemove: { mediaLibrary.removeTrack(id: track.id) },
+                onTrash: { _ = mediaLibrary.trashTrack(id: track.id) },
+                onAddToAssets: { _ = importToAssets([track.url]) }
+            )
         }
     }
 
@@ -196,6 +191,19 @@ extension LibrarySidebar {
         AmbientPlayer.shared.enqueue([track])
         if MediaKind.from(url: track.url) == .video {
             VideoVibeWindowController.shared.show()
+        }
+    }
+
+    /// AI-organize every file in the group. Resolves filenames to
+    /// {artist, song} via the LLM, moves them under
+    /// `<mediaRoot>/<Artist>/<Artist> - <Song>.<ext>`. Especially useful
+    /// for the "Loose files" group where nothing has been classified yet.
+    func organizeGroup(_ group: MediaLibrary.MediaGroup) {
+        guard let root = libraryRoots.mediaRoot, !group.items.isEmpty else { return }
+        let urls = group.items.map { $0.url }
+        Task { @MainActor in
+            _ = await MediaCategorizer.organizeBatch(urls: urls, underRoot: root)
+            await mediaLibrary.scanRoot(root)
         }
     }
 

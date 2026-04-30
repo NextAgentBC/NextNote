@@ -203,22 +203,36 @@ extension MediaLibraryView {
         .contextMenu(forSelectionType: UUID.self) { ids in
             if !ids.isEmpty {
                 if ids.count == 1, let id = ids.first, let t = tracks.first(where: { $0.id == id }) {
-                    Button("Rename Title…") { beginRenameTrack(t, kind: .title) }
-                    Button("Rename File on Disk…") { beginRenameTrack(t, kind: .file) }
+                    trackContextMenu(
+                        track: t,
+                        onRenameTitle: { beginRenameTrack(t, kind: .title) },
+                        onRenameFile: { beginRenameTrack(t, kind: .file) },
+                        onRemove: {
+                            library.removeTrack(id: t.id)
+                            selectedTrackIDs.remove(t.id)
+                        },
+                        onTrash: {
+                            _ = library.trashTrack(id: t.id)
+                            selectedTrackIDs.remove(t.id)
+                        }
+                    )
+                } else {
+                    let selected = tracks.filter { ids.contains($0.id) }
+                    Button("Play") { playRouted(selected) }
+                    Button("Enqueue") { MediaPlayback.enqueue(selected) }
                     Divider()
-                }
-                Button("Remove from Library") {
-                    for id in ids { library.removeTrack(id: id) }
-                    selectedTrackIDs.subtract(ids)
-                }
-                Button("Move Files to Trash", role: .destructive) {
-                    for id in ids { _ = library.trashTrack(id: id) }
-                    selectedTrackIDs.subtract(ids)
-                }
-                Divider()
-                Button("Reveal in Finder") {
-                    let urls = tracks.filter { ids.contains($0.id) }.map { $0.url }
-                    FinderActions.reveal(urls)
+                    Button("Reveal in Finder") {
+                        FinderActions.reveal(selected.map { $0.url })
+                    }
+                    Divider()
+                    Button("Remove from Library") {
+                        for id in ids { library.removeTrack(id: id) }
+                        selectedTrackIDs.subtract(ids)
+                    }
+                    Button("Move Files to Trash", role: .destructive) {
+                        for id in ids { _ = library.trashTrack(id: id) }
+                        selectedTrackIDs.subtract(ids)
+                    }
                 }
             }
         }

@@ -82,13 +82,16 @@ final class VaultStore: ObservableObject {
 
     func scan() async {
         guard let root else { return }
+        if isScanning { return }
         isScanning = true
         defer { isScanning = false }
-        let (built, truncated) = VaultTreeScanner.buildTree(root: root)
-        if truncated {
+        let result = await Task.detached(priority: .userInitiated) {
+            VaultTreeScanner.buildTree(root: root)
+        }.value
+        if result.truncated {
             lastError = "Vault has >\(VaultTreeScanner.maxNodes) items. Tree truncated for performance."
         }
-        tree = built
+        tree = result.tree
     }
 
     func rescan(subpath: String) async {

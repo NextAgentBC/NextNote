@@ -13,7 +13,9 @@ enum BookLibrary {
         context: ModelContext
     ) async {
         guard let root = ebooksRoot else { return }
-        let (epubs, pdfs) = enumerate(root)
+        let (epubs, pdfs) = await Task.detached(priority: .userInitiated) {
+            enumerate(root)
+        }.value
 
         NSLog("[BookLibrary] scan root=\(root.path) epubs=\(epubs.count) pdfs=\(pdfs.count)")
 
@@ -40,7 +42,7 @@ enum BookLibrary {
         }
     }
 
-    private static func enumerate(_ root: URL) -> (epubs: [URL], pdfs: [URL]) {
+    nonisolated private static func enumerate(_ root: URL) -> (epubs: [URL], pdfs: [URL]) {
         guard FileManager.default.fileExists(atPath: root.path) else { return ([], []) }
         guard let enumerator = FileManager.default.enumerator(
             at: root,

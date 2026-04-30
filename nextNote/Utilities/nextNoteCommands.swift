@@ -40,6 +40,14 @@ struct NextNoteCommands: Commands {
                 }
             }
             .keyboardShortcut("w", modifiers: .command)
+
+            Divider()
+
+            Button("Export as PDF…") {
+                appState.triggerExportPDF = true
+            }
+            .keyboardShortcut("e", modifiers: [.command, .shift])
+            .disabled(appState.activeTab == nil)
         }
 
         // Edit menu additions
@@ -52,24 +60,28 @@ struct NextNoteCommands: Commands {
 
         // Workflow menu — terminal and shortcuts toggles.
         CommandMenu("Workflow") {
-            Button(appState.showTerminal ? "Hide Terminal" : "Show Terminal") {
+            // Section 1 — terminals. Two distinct surfaces:
+            //   • Shell (PTY): real /bin/zsh in the vault root for Claude
+            //     Code / Gemini CLI / yt-dlp / git workflows.
+            //   • AI Terminal (LLM): direct streaming chat, every prompt is a
+            //     replayable block (Warp-style).
+            Button(appState.showTerminal ? "Hide Shell" : "Show Shell") {
                 appState.showTerminal.toggle()
             }
             .keyboardShortcut("t", modifiers: [.command, .shift])
 
+            Button(appState.showChatBall ? "Hide AI Terminal" : "Show AI Terminal") {
+                appState.showChatBall.toggle()
+            }
+            .keyboardShortcut("k", modifiers: [.command, .shift])
+
             Divider()
 
+            // Section 2 — discoverability.
             Button(appState.showShortcuts ? "Hide Shortcuts" : "Show Shortcuts") {
                 appState.showShortcuts.toggle()
             }
             .keyboardShortcut("/", modifiers: .command)
-
-            Divider()
-
-            Button(appState.showChatBall ? "Hide AI Chat" : "Show AI Chat") {
-                appState.showChatBall.toggle()
-            }
-            .keyboardShortcut("k", modifiers: [.command, .shift])
         }
 
         // Merge into the system View menu (NavigationSplitView already adds
@@ -83,6 +95,13 @@ struct NextNoteCommands: Commands {
                     Text(mode.rawValue).tag(mode)
                 }
             }
+
+            #if os(macOS)
+            Button("Floating Preview") {
+                appState.triggerFloatingPreviewToggle = true
+            }
+            .keyboardShortcut("p", modifiers: [.command, .shift])
+            #endif
 
             Divider()
 
@@ -148,7 +167,7 @@ struct NextNoteCommands: Commands {
         // system volume / mission control.
         CommandMenu("Media") {
             Button("Play / Pause") {
-                Task { @MainActor in AmbientPlayer.shared.togglePlayPause() }
+                Task { @MainActor in MediaPlayback.togglePlayPause() }
             }
             .keyboardShortcut(.space, modifiers: [.option])
 
@@ -164,6 +183,18 @@ struct NextNoteCommands: Commands {
 
             Divider()
 
+            Button("Shuffle Library") {
+                Task { @MainActor in MediaPlayback.shuffleLibrary() }
+            }
+            .keyboardShortcut("s", modifiers: [.command, .option])
+
+            Button("Toggle Loop") {
+                Task { @MainActor in AmbientPlayer.shared.loop.toggle() }
+            }
+            .keyboardShortcut("l", modifiers: [.command, .option])
+
+            Divider()
+
             Button("Media Library") {
                 appState.showMediaLibrary.toggle()
             }
@@ -174,11 +205,32 @@ struct NextNoteCommands: Commands {
             }
             .keyboardShortcut("a", modifiers: [.command, .shift])
 
-            // Cmd+Shift+V is "Paste and Match Style" in macOS text fields — skip
-            // the shortcut here to avoid stealing it inside the editor.
             Button("Toggle Video Vibe Window") {
                 Task { @MainActor in VideoVibeWindowController.shared.toggle() }
             }
+
+            Divider()
+
+            Button("Restore Titles") {
+                appState.showMediaLibrary = true
+                appState.triggerRestoreTitles = true
+            }
+
+            Button("Organize Library (AI)") {
+                appState.showMediaLibrary = true
+                appState.triggerOrganizeLibrary = true
+            }
+            .keyboardShortcut("o", modifiers: [.command, .shift])
+
+            Button("Reconcile / Dedupe (AI)…") {
+                appState.showReconcileLibrary = true
+            }
+            .keyboardShortcut("o", modifiers: [.command, .shift, .option])
+
+            Button("Rescan Media Folder") {
+                appState.triggerRescanMedia = true
+            }
+            .keyboardShortcut("r", modifiers: [.command, .control])
 
             Divider()
 

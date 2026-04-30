@@ -7,11 +7,21 @@ import Foundation
 enum MarkdownHTMLWrapper {
     static func wrap(_ markdown: String, baseURL: URL?) -> String {
         let htmlBody = MarkdownToHTML.render(markdown)
+        // <base href="…/"> tells the browser to resolve relative `<img src=…>`
+        // and friends against the note's vault folder, even though the HTML
+        // itself lives in /tmp/nextnote-previews/.
+        let baseTag: String = {
+            guard let baseURL else { return "" }
+            let dir = baseURL.hasDirectoryPath ? baseURL : baseURL.deletingLastPathComponent()
+            let href = dir.absoluteString.hasSuffix("/") ? dir.absoluteString : dir.absoluteString + "/"
+            return "<base href=\"\(href)\">"
+        }()
         return """
         <!DOCTYPE html>
         <html>
         <head>
         <meta charset="UTF-8">
+        \(baseTag)
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <!-- KaTeX: $…$ inline and $$…$$ display math. Loaded from CDN; no
              network = math falls back to raw text and everything else still
@@ -64,6 +74,23 @@ enum MarkdownHTMLWrapper {
         <body>
         \(htmlBody)
         <script>
+          // Force first-frame paint on every video so the preview shows a
+          // cover image instead of a black box. Seek to 0.1s once metadata
+          // arrives, then unmute and let the user control playback.
+          document.addEventListener("DOMContentLoaded", function() {
+            document.querySelectorAll("video.nn-video").forEach(function(v) {
+              var seeked = false;
+              v.addEventListener("loadedmetadata", function() {
+                if (seeked) return;
+                seeked = true;
+                try { v.currentTime = Math.min(0.1, (v.duration || 1) * 0.01); } catch (e) {}
+              });
+              v.addEventListener("seeked", function once() {
+                v.removeEventListener("seeked", once);
+                v.muted = false;
+              });
+            });
+          });
           document.addEventListener("DOMContentLoaded", function() {
             if (typeof renderMathInElement !== "function") return;
             renderMathInElement(document.body, {

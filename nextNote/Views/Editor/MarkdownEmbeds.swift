@@ -5,9 +5,19 @@ import Foundation
 /// The sentinel survives HTML escaping and is restored to a real
 /// `<img>` / `<video>` / `<audio>` tag afterwards.
 enum MarkdownEmbeds {
+    private static let mdImageRegex: NSRegularExpression? = {
+        try? NSRegularExpression(pattern: #"!\[(.*?)\]\(([^\)]+)\)"#)
+    }()
+
+    private static let sentinelRegex: NSRegularExpression? = {
+        try? NSRegularExpression(
+            pattern: #"%%EMBED_(IMG|VIDEO|AUDIO|YOUTUBE)_START%%(.+?)%%EMBED_ALT%%(.*?)%%EMBED_END%%"#,
+            options: [.dotMatchesLineSeparators]
+        )
+    }()
+
     static func replace(in text: String) -> String {
-        let pattern = #"!\[(.*?)\]\(([^\)]+)\)"#
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return text }
+        guard let regex = mdImageRegex else { return text }
         let ns = text as NSString
         let matches = regex.matches(in: text, range: NSRange(location: 0, length: ns.length))
         guard !matches.isEmpty else { return text }
@@ -33,8 +43,7 @@ enum MarkdownEmbeds {
     }
 
     static func restore(in text: String) -> String {
-        let pattern = #"%%EMBED_(IMG|VIDEO|AUDIO|YOUTUBE)_START%%(.+?)%%EMBED_ALT%%(.*?)%%EMBED_END%%"#
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators]) else { return text }
+        guard let regex = sentinelRegex else { return text }
         let ns = text as NSString
         let matches = regex.matches(in: text, range: NSRange(location: 0, length: ns.length))
         guard !matches.isEmpty else { return text }
@@ -80,7 +89,7 @@ enum MarkdownEmbeds {
     static func emitTag(kind: String, src: String, alt: String) -> String {
         switch kind {
         case "VIDEO":
-            return "<video controls preload=\"metadata\"><source src=\"\(src)\"></video>"
+            return "<video controls preload=\"auto\" muted playsinline class=\"nn-video\"><source src=\"\(src)\"></video>"
         case "AUDIO":
             return "<audio controls preload=\"metadata\"><source src=\"\(src)\"></audio>"
         case "YOUTUBE":

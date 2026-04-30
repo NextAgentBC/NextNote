@@ -13,6 +13,8 @@ struct SettingsView: View {
                 .tabItem { Label("Editor", systemImage: "doc.text") }
             VaultSettingsView()
                 .tabItem { Label("Vault", systemImage: "folder") }
+            MediaSettingsView()
+                .tabItem { Label("Media", systemImage: "music.note") }
             SyncSettingsView()
                 .tabItem { Label("Sync", systemImage: "icloud") }
             AISettingsView()

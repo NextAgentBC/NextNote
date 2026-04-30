@@ -69,34 +69,27 @@ struct ContentView: View {
                 appState.triggerRescanLibrary = false
             }
         }
+        .onChange(of: appState.triggerRescanMedia) { _, v in
+            if v {
+                appState.triggerRescanMedia = false
+                Task { await MediaLibrary.shared.scanRoot(libraryRoots.mediaRoot) }
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .reembedLibraryRequested)) { _ in
             Task { @MainActor in await reembedLibrary() }
         }
         // Rescan whenever the window regains focus — user dropped a file in
-        // Finder, switches back, expects to see it instantly. Debounced so
-        // app-switch storms (Cmd-Tab loops) don't trigger N back-to-back
-        // tree walks.
+        // Finder, switches back, expects to see it instantly. Debounce kept
+        // generous (60s) because the focus event fires on every Cmd-Tab and
+        // each rescan walks three trees (vault + ebooks + media).
         #if os(macOS)
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
             let now = Date()
-            if now.timeIntervalSince(lastRescanAt) < 10 { return }
+            if now.timeIntervalSince(lastRescanAt) < 60 { return }
             lastRescanAt = now
             Task { await rescanLibrary() }
         }
         #endif
-        // Background tick while app is frontmost — catches files added while
-        // the window was already focused. 60s is a deliberate compromise:
-        // shorter than this and the cumulative cost of three tree walks
-        // (vault + ebooks + media) shows up as periodic UI hitches; longer
-        // than this and ⌘N → file shows up "too late" feels broken.
-        .task(id: vault.root) {
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(60))
-                guard !Task.isCancelled else { break }
-                lastRescanAt = Date()
-                await rescanLibrary()
-            }
-        }
         // Auto-save: re-starts whenever autoSaveInterval changes; cancelled on view disappear.
         // interval == 0 means "manual only" — task returns immediately without looping.
         .task(id: preferences.autoSaveInterval) {
@@ -145,6 +138,43 @@ struct ContentView: View {
                 .environmentObject(appState)
                 .environmentObject(libraryRoots)
         }
+        #if os(macOS)
+        // Reconcile / Dedupe sheet — AI groups duplicate artist folders and
+        // detects duplicate tracks for batch cleanup.
+        .sheet(isPresented: $appState.showReconcileLibrary) {
+            LibraryReconcileSheet()
+                .environmentObject(appState)
+                .environmentObject(libraryRoots)
+        }
+        // Floating preview window — toggled via View > Floating Preview
+        // (⌘⇧P) or the toolbar pop-out button. Opens / closes a standalone
+        // NSWindow that mirrors the active note's rendered markdown so it
+        // can be screen-shared in video calls.
+        .onChange(of: appState.triggerFloatingPreviewToggle) { _, trigger in
+            guard trigger else { return }
+            appState.triggerFloatingPreviewToggle = false
+            if PreviewWindowController.shared.isOpen {
+                PreviewWindowController.shared.close()
+            } else {
+                PreviewWindowController.shared.show(
+                    appState: appState,
+                    vault: vault,
+                    libraryRoots: libraryRoots,
+                    preferences: preferences
+                )
+            }
+        }
+        #endif
+        // Drawing window opens via DrawingWindowController in EditorAreaView's
+        // toolbar action — no sheet wiring needed here.
+        // PDF export trigger — File > Export > PDF…
+        #if os(macOS)
+        .onChange(of: appState.triggerExportPDF) { _, triggered in
+            guard triggered else { return }
+            appState.triggerExportPDF = false
+            exportActiveNoteAsPDF()
+        }
+        #endif
         // File importer: supports both toolbar button and macOS menu (via appState.showFileImporter)
         .fileImporter(
             isPresented: $appState.showFileImporter,
@@ -214,12 +244,6 @@ struct ContentView: View {
         }
         .toolbar { macToolbar }
         .overlay(alignment: .bottomTrailing) {
-            FloatingChatBall()
-                .environmentObject(appState)
-                .padding(.trailing, 20)
-                .padding(.bottom, 20)
-        }
-        .overlay(alignment: .bottomTrailing) {
             if appState.showShortcuts {
                 ShortcutCheatsheet()
                     .environmentObject(appState)
@@ -229,7 +253,17 @@ struct ContentView: View {
             }
         }
         .animation(.easeOut(duration: 0.15), value: appState.showShortcuts)
-        .animation(.easeOut(duration: 0.2), value: appState.showChatBall)
+        // AI chat terminal opens via ⌘⇧K in NextNoteCommands → toggles
+        // appState.showChatBall, which we observe here and route through
+        // `ChatTerminalWindowController` so the terminal lives in a
+        // standalone NSWindow (Warp-style) instead of as an in-window panel.
+        .onChange(of: appState.showChatBall) { _, show in
+            if show {
+                ChatTerminalWindowController.shared.show(appState: appState)
+            } else {
+                ChatTerminalWindowController.shared.close()
+            }
+        }
         #else
         NavigationStack {
             editorArea

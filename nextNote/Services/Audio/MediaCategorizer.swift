@@ -14,8 +14,16 @@ enum MediaCategorizer {
 
     /// Output of `cleanAndClassify`.
     struct Cleaned: Sendable, Equatable {
-        var artist: String?      // canonical folder name, prefer native script
-        var song: String?        // clean song / episode title, no marketing noise
+        var artist: String?           // canonical primary artist (folder name)
+        var collaborators: [String]   // additional artists for collabs
+        var song: String?             // clean song title, no marketing noise
+
+        /// Combined folder name. Single artist → "Artist". Collab → "A & B".
+        var folderName: String? {
+            guard let a = artist, !a.isEmpty else { return nil }
+            if collaborators.isEmpty { return a }
+            return ([a] + collaborators).joined(separator: " & ")
+        }
     }
 
     enum CategorizeError: LocalizedError {
@@ -70,6 +78,101 @@ enum MediaCategorizer {
         context: Context? = nil,
         existingArtists: [String] = []
     ) async throws -> Cleaned {
+        // Try LLM first; fall back to regex parsing on any failure. Failures
+        // were previously swallowed by `try?` which made misclassification
+        // silently look like the regex was wrong — log so the user can see
+        // the AI path actually died.
+        do {
+            return try await classifyWithAI(
+                title: title,
+                context: context,
+                existingArtists: existingArtists
+            )
+        } catch {
+            print("[MediaCategorizer] AI classify failed for \(title.prefix(80)): \(error.localizedDescription) — falling back to regex")
+        }
+        return regexClassify(
+            title: title,
+            context: context,
+            existingArtists: existingArtists
+        )
+    }
+
+    /// LLM classifier. Asks for canonical artist + collaborators + song,
+    /// reuses an existing artist folder when one matches.
+    static func classifyWithAI(
+        title: String,
+        context: Context?,
+        existingArtists: [String]
+    ) async throws -> Cleaned {
+        let ai = AIService()
+        let system = """
+        You extract music metadata from messy YouTube / file titles.
+        Return ONLY a JSON object:
+        {"artist": "...", "collaborators": ["..."], "song": "..."}
+
+        Rules:
+        - "artist" is the primary performer (canonical, native script when applicable: 邓紫棋 not G.E.M.).
+        - "collaborators" is the list of OTHER credited artists (feat., &, vs., x, with). Empty array if none.
+        - "song" is the clean song / episode title. Strip marketing noise like
+          "(Official Music Video)", "[HD]", "(Lyrics)", "[videoId]".
+        - When the title doesn't say a performer, fall back to the YouTube uploader / channel.
+        - When the user already has a folder for this artist (case-insensitive match
+          on any spelling), reuse the EXACT existing folder name verbatim.
+        - All fields are strings except "collaborators" which is an array of strings.
+        - No markdown fences. No prose. JSON only.
+        """
+
+        var lines: [String] = ["Title: \(title)"]
+        if let c = context {
+            if let v = c.uploader { lines.append("Uploader: \(v)") }
+            if let v = c.channel { lines.append("Channel: \(v)") }
+            if let v = c.categories { lines.append("Categories: \(v)") }
+            if let v = c.tags { lines.append("Tags: \(v)") }
+            if let v = c.playlist { lines.append("Playlist: \(v)") }
+        }
+        if !existingArtists.isEmpty {
+            lines.append("Existing artist folders: \(existingArtists.joined(separator: ", "))")
+        }
+
+        let raw = try await ai.complete(prompt: lines.joined(separator: "\n"), system: system)
+        let trimmed = strippedFences(raw)
+        let jsonText: String
+        if let r = firstJSONObject(in: trimmed) {
+            jsonText = String(trimmed[r])
+        } else {
+            jsonText = trimmed
+        }
+        guard let data = jsonText.data(using: .utf8) else {
+            throw CategorizeError.invalidJSON(raw)
+        }
+        struct Resp: Decodable {
+            let artist: String?
+            let collaborators: [String]?
+            let song: String?
+        }
+        guard let resp = try? JSONDecoder().decode(Resp.self, from: data) else {
+            throw CategorizeError.invalidJSON(raw)
+        }
+        var artist = resp.artist.flatMap { sanitize($0).nonEmpty }
+        let song = resp.song.flatMap { sanitize($0).nonEmpty }
+        let collaborators = (resp.collaborators ?? []).compactMap { sanitize($0).nonEmpty }
+
+        if let a = artist,
+           let match = existingArtists.first(where: { $0.localizedCaseInsensitiveCompare(a) == .orderedSame }) {
+            artist = match
+        }
+
+        return Cleaned(artist: artist, collaborators: collaborators, song: song)
+    }
+
+    /// Original pure-string fallback. Same logic as before — no LLM, no
+    /// network. Used when AI is unreachable / disabled.
+    static func regexClassify(
+        title: String,
+        context: Context?,
+        existingArtists: [String]
+    ) -> Cleaned {
         let stripped = stripNoise(title)
 
         // Normalize unicode dashes to ASCII " - " before splitting.
@@ -106,7 +209,7 @@ enum MediaCategorizer {
             }
         }
 
-        return Cleaned(artist: artist, song: song)
+        return Cleaned(artist: artist, collaborators: [], song: song)
     }
 
     /// Strip the cruft yt-dlp / YouTube uploaders pile onto titles:
@@ -158,7 +261,7 @@ enum MediaCategorizer {
             existingArtists: existing
         )
 
-        let folder = sanitize(cleaned.artist ?? "").nonEmpty ?? "Unknown"
+        let folder = sanitize(cleaned.folderName ?? "").nonEmpty ?? "Unknown"
         let dir = root.appendingPathComponent(folder, isDirectory: true)
         do {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -171,10 +274,10 @@ enum MediaCategorizer {
         // (with [videoId] cruft) only used as last resort.
         let ext = url.pathExtension
         let song = cleaned.song.flatMap { sanitize($0).nonEmpty }
-        let cleanArtist = cleaned.artist.flatMap { sanitize($0).nonEmpty }
+        let displayArtist = sanitize(cleaned.folderName ?? "").nonEmpty
         let baseName: String
-        if let cleanArtist, let song {
-            baseName = "\(cleanArtist) - \(song)"
+        if let displayArtist, let song {
+            baseName = "\(displayArtist) - \(song)"
         } else if let song {
             baseName = song
         } else {
@@ -189,6 +292,64 @@ enum MediaCategorizer {
             throw CategorizeError.moveFailed(error.localizedDescription)
         }
         return dest
+    }
+
+    /// Recursively flatten input URLs into media files (audio + video) and
+    /// run `organize` on each. Returns the final on-disk URLs in completion
+    /// order. Used by drop targets that accept files OR folders — dragging a
+    /// whole album dir auto-merges into per-artist folders.
+    @discardableResult
+    static func organizeBatch(
+        urls inputs: [URL],
+        underRoot root: URL,
+        progress: ((String) -> Void)? = nil
+    ) async -> [URL] {
+        let files = await Task.detached(priority: .userInitiated) {
+            expandToMediaFiles(inputs)
+        }.value
+        var out: [URL] = []
+        for (idx, url) in files.enumerated() {
+            progress?("Organizing \(idx + 1)/\(files.count): \(url.lastPathComponent)")
+            do {
+                let dest = try await organize(url: url, underRoot: root)
+                out.append(dest)
+            } catch {
+                progress?("Skip \(url.lastPathComponent): \(error.localizedDescription)")
+            }
+        }
+        // Best-effort cleanup: remove empty source directories the user dragged in.
+        for url in inputs {
+            let isDir = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
+            guard isDir else { continue }
+            let contents = (try? FileManager.default.contentsOfDirectory(atPath: url.path)) ?? [""]
+            if contents.filter({ !$0.hasPrefix(".") }).isEmpty {
+                try? FileManager.default.removeItem(at: url)
+            }
+        }
+        return out
+    }
+
+    nonisolated private static func expandToMediaFiles(_ urls: [URL]) -> [URL] {
+        var out: [URL] = []
+        for url in urls {
+            let isDir = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
+            if isDir {
+                let enumerator = FileManager.default.enumerator(
+                    at: url,
+                    includingPropertiesForKeys: [.isDirectoryKey],
+                    options: [.skipsHiddenFiles, .skipsPackageDescendants]
+                )
+                while let next = enumerator?.nextObject() as? URL {
+                    let nestedIsDir = (try? next.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
+                    if !nestedIsDir, MediaKind.from(url: next) != nil {
+                        out.append(next)
+                    }
+                }
+            } else if MediaKind.from(url: url) != nil {
+                out.append(url)
+            }
+        }
+        return out
     }
 
     /// Snapshot of subfolders at `root` — used as context so the LLM reuses

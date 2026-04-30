@@ -96,11 +96,29 @@ struct MediaLibraryView: View {
                     if isAutoCleaning {
                         ProgressView().controlSize(.small)
                     } else {
-                        Label("Auto-Clean", systemImage: "wand.and.sparkles")
+                        Label("Organize Library", systemImage: "wand.and.sparkles")
                     }
                 }
-                .disabled(isAutoCleaning || locator.downloadFolderURL == nil)
-                .help("AI cleans every track: extracts real performer + song, renames file + moves to <Category>/<Performer>/ (needs download folder set)")
+                .disabled(isAutoCleaning || (libraryRoots.mediaRoot ?? locator.downloadFolderURL) == nil)
+                .help("AI extracts artist + song from each track, renames file + moves into <Artist>/ folders under the Media root")
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    appState.showReconcileLibrary = true
+                } label: {
+                    Label("Reconcile…", systemImage: "rectangle.on.rectangle.angled")
+                }
+                .disabled(libraryRoots.mediaRoot == nil)
+                .help("Detect duplicate artist folders + duplicate songs, review, and clean up")
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    tidyWithClaude()
+                } label: {
+                    Label("Tidy in Terminal", systemImage: "sparkles.tv")
+                }
+                .disabled(tidyTargetRoot() == nil)
+                .help("Open the embedded terminal and ask Claude to organize the library — handles edge cases the local parser misses")
             }
         }
         .alert("New Playlist", isPresented: $showingNewPlaylist) {
@@ -162,6 +180,27 @@ struct MediaLibraryView: View {
             Button("OK", role: .cancel) { renameTrackError = nil }
         } message: {
             Text(renameTrackError ?? "")
+        }
+        .onAppear { handlePendingTriggers() }
+        .onChange(of: appState.triggerRestoreTitles) { _, v in
+            if v { handlePendingTriggers() }
+        }
+        .onChange(of: appState.triggerOrganizeLibrary) { _, v in
+            if v { handlePendingTriggers() }
+        }
+    }
+
+    /// Run any pending Media-menu triggers (Restore Titles / Organize). The
+    /// menu sets these + opens this sheet; we kick the action off so the
+    /// in-sheet status bar shows progress.
+    func handlePendingTriggers() {
+        if appState.triggerRestoreTitles {
+            appState.triggerRestoreTitles = false
+            if !isBackfilling { runBackfill() }
+        }
+        if appState.triggerOrganizeLibrary {
+            appState.triggerOrganizeLibrary = false
+            if !isAutoCleaning { runAutoClean() }
         }
     }
 

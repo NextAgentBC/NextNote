@@ -1,66 +1,12 @@
 import SwiftUI
 
 extension MediaLibraryView {
-    /// Inline action strip at the top of the sidebar — sheet-presented
-    /// NavigationSplitView doesn't reliably surface .toolbar items on
-    /// macOS, so these live in view space instead.
+    /// Empty placeholder — actions moved to the sheet's toolbar to dedupe
+    /// with the per-tray sidebar context-menus. Kept as a view so the
+    /// sidebar layout doesn't change when this slot is empty.
+    @ViewBuilder
     var libraryActionsBar: some View {
-        HStack(spacing: 6) {
-            Button {
-                runBackfill()
-            } label: {
-                HStack(spacing: 4) {
-                    if isBackfilling {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Image(systemName: "character.bubble")
-                    }
-                    Text("Restore Titles")
-                        .font(.caption)
-                }
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .disabled(isBackfilling || YTDLPLocator.shared.binaryURL == nil)
-            .help("Re-fetch Chinese/real titles via yt-dlp")
-
-            Button {
-                runAutoClean()
-            } label: {
-                HStack(spacing: 4) {
-                    if isAutoCleaning {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Image(systemName: "wand.and.sparkles")
-                    }
-                    Text("Auto-Clean")
-                        .font(.caption)
-                }
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .disabled(isAutoCleaning || locator.downloadFolderURL == nil)
-            .help("Local string parser — extracts artist + song, renames + moves into <Artist>/ folders")
-
-            Button {
-                tidyWithClaude()
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "sparkles.tv")
-                    Text("Tidy with Claude")
-                        .font(.caption)
-                }
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .disabled(tidyTargetRoot() == nil)
-            .help("Open the embedded terminal and ask Claude to organize the library — handles edge cases the local parser misses")
-
-            Spacer()
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .background(.bar)
+        EmptyView()
     }
 
     /// Pick the directory Claude should organize. Prefers the configured
@@ -89,7 +35,7 @@ extension MediaLibraryView {
     }
 
     func runAutoClean() {
-        guard let root = locator.downloadFolderURL else { return }
+        guard let root = libraryRoots.mediaRoot ?? locator.downloadFolderURL else { return }
         isAutoCleaning = true
         autoCleanStatus = "Starting…"
         Task {
@@ -139,7 +85,7 @@ extension MediaLibraryView {
     }
 
     func autoOrganize(_ tracks: [Track]) {
-        guard let root = locator.downloadFolderURL else { return }
+        guard let root = libraryRoots.mediaRoot ?? locator.downloadFolderURL else { return }
         isOrganizing = true
         organizeStatus = "Starting…"
         Task {

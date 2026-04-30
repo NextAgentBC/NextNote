@@ -6,12 +6,14 @@ import UniformTypeIdentifiers
 // button opens the full media manager (tracks + playlists).
 struct AmbientBar: View {
     @EnvironmentObject private var appState: AppState
+    @EnvironmentObject private var libraryRoots: LibraryRoots
     @StateObject private var player = AmbientPlayer.shared
     @StateObject private var library = MediaLibrary.shared
     @State private var showQueuePopover: Bool = false
     @State private var importerOpen: Bool = false
     @State private var collapsed: Bool = UserDefaults.standard.bool(forKey: "ambientBarCollapsed")
     @State private var isDropTarget: Bool = false
+    @State private var organizingStatus: String = ""
 
     var body: some View {
         Group {
@@ -29,19 +31,46 @@ struct AmbientBar: View {
         )
         .background(.bar)
         .dropDestination(for: URL.self) { urls, _ in
-            let added = library.addFiles(urls)
-            if !added.isEmpty { player.enqueue(added) }
+            handleDrop(urls)
             return true
         } isTargeted: { isDropTarget = $0 }
         .fileImporter(
             isPresented: $importerOpen,
-            allowedContentTypes: [.audio, .mp3, .mpeg4Audio, .wav, .aiff],
+            allowedContentTypes: [.audio, .mp3, .mpeg4Audio, .wav, .aiff,
+                                  .movie, .mpeg4Movie, .quickTimeMovie],
             allowsMultipleSelection: true
         ) { result in
             if case .success(let urls) = result {
-                let added = library.addFiles(urls)
-                if !added.isEmpty { player.enqueue(added) }
+                handleDrop(urls)
             }
+        }
+    }
+
+    /// Drop handler shared by drag-drop and file picker. If a media root is
+    /// configured AND the auto-organize-on-drop toggle is on, run AI
+    /// auto-organize so dropped files (or whole folders) land under
+    /// `<mediaRoot>/<Artist>/<Artist> - <Song>.<ext>`. Otherwise plain import.
+    private func handleDrop(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        let autoOrgDrop = UserDefaults.standard.object(forKey: "media.autoOrganizeOnDrop") as? Bool ?? true
+        if autoOrgDrop, let root = libraryRoots.mediaRoot {
+            organizingStatus = "Organizing \(urls.count) item(s)…"
+            Task { @MainActor in
+                let finalURLs = await MediaCategorizer.organizeBatch(
+                    urls: urls,
+                    underRoot: root,
+                    progress: { line in
+                        Task { @MainActor in organizingStatus = line }
+                    }
+                )
+                let added = library.addFiles(finalURLs)
+                if !added.isEmpty { player.enqueue(added) }
+                organizingStatus = ""
+                appState.triggerRescanLibrary = true
+            }
+        } else {
+            let added = library.addFiles(urls)
+            if !added.isEmpty { player.enqueue(added) }
         }
     }
 
@@ -136,13 +165,13 @@ struct AmbientBar: View {
             .buttonStyle(.borderless)
             .disabled(player.queue.isEmpty)
 
-            Button { player.togglePlayPause() } label: {
+            Button { playPauseRouted() } label: {
                 Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 14))
                     .frame(width: 20)
             }
             .buttonStyle(.borderless)
-            .disabled(player.queue.isEmpty)
+            .disabled(player.queue.isEmpty && library.tracks.isEmpty)
 
             Button { player.next() } label: {
                 Image(systemName: "forward.fill")
@@ -150,6 +179,12 @@ struct AmbientBar: View {
             .buttonStyle(.borderless)
             .disabled(player.queue.isEmpty)
         }
+    }
+
+    /// Play button: routes through MediaPlayback so video-window auto-pop
+    /// + library-fallback stays consistent with sidebar / MediaLibrary.
+    private func playPauseRouted() {
+        MediaPlayback.togglePlayPause()
     }
 
     private var titleAndScrub: some View {
@@ -321,6 +356,12 @@ struct AmbientBar: View {
                             .background(idx == player.currentIndex ? Color.accentColor.opacity(0.1) : Color.clear)
                             .onTapGesture {
                                 player.play(at: idx)
+                            }
+                            .contextMenu {
+                                trackContextMenu(
+                                    track: track,
+                                    onRemove: { player.remove(at: idx) }
+                                )
                             }
                         }
                     }
