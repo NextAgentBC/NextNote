@@ -23,6 +23,9 @@ final class ChatTerminalWindowController {
             .environmentObject(appState)
 
         let host = NSHostingController(rootView: view)
+        // Match the SwiftUI ideal size — NSHostingController otherwise lets
+        // its content's intrinsic size win and the window collapses tiny.
+        host.sizingOptions = []
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 920, height: 680),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -33,10 +36,16 @@ final class ChatTerminalWindowController {
         window.titlebarAppearsTransparent = true
         window.contentViewController = host
         window.contentMinSize = NSSize(width: 480, height: 360)
-        window.center()
-        window.isReleasedWhenClosed = false
         window.tabbingMode = .disallowed
-        window.setFrameAutosaveName("nextnote.aiterminal.window")
+        // Restore saved frame before centering, then enforce default size
+        // when the saved frame would collapse below the min — autosave
+        // reload happens synchronously inside setFrameAutosaveName().
+        window.setFrameAutosaveName("nextnote.aiterminal.window.v2")
+        if window.frame.width < 480 || window.frame.height < 360 {
+            window.setContentSize(NSSize(width: 920, height: 680))
+            window.center()
+        }
+        window.isReleasedWhenClosed = false
         // Match the inner terminal background so the title bar blends in
         // instead of giving us a chrome stripe.
         window.backgroundColor = NSColor(red: 0.110, green: 0.110, blue: 0.118, alpha: 1.0)

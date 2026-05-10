@@ -42,3 +42,5 @@ AGENTS.md
 # is the author's local recording that shouldn't bloat the repo.
 demo/*.mov
 demo/nextnote-demo.mp4
+*.aiff
+*.m4a

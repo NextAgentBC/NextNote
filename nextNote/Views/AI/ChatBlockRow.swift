@@ -215,16 +215,17 @@ private struct ChatMarkdownLine: View {
 
     @ViewBuilder
     private func renderInline(_ s: String) -> some View {
-        if let attr = try? AttributedString(
-            markdown: s,
-            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        ) {
-            Text(attr)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        } else {
-            Text(s)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
+        // Render verbatim — Apple's `AttributedString(markdown:)` parser
+        // silently drops Chinese characters when bold markers (`**X**`)
+        // span CJK runs (parser treats them as not adjacent to a "word"
+        // boundary and produces an empty / truncated string). Showing raw
+        // markdown source is strictly better than losing the content.
+        // Block-level lists / headings / quotes are still styled by the
+        // surrounding `ChatMarkdownLine` switch — only inline bold /
+        // italic / code remain unrendered until we route the response
+        // through a per-block WKWebView.
+        Text(verbatim: s)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// Match `\d+\. ` prefix → (number, rest).

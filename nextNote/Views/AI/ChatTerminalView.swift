@@ -32,6 +32,10 @@ struct ChatTerminalView: View {
                         .frame(height: 1)
                 }
         }
+        .frame(
+            minWidth: 480, idealWidth: 920, maxWidth: .infinity,
+            minHeight: 360, idealHeight: 680, maxHeight: .infinity
+        )
         .background(terminalBackground)
         .preferredColorScheme(.dark)
     }

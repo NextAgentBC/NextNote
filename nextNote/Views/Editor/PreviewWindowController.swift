@@ -40,6 +40,7 @@ final class PreviewWindowController {
             .environmentObject(preferences)
 
         let hosting = NSHostingController(rootView: host)
+        hosting.sizingOptions = []
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 980, height: 720),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -49,11 +50,13 @@ final class PreviewWindowController {
         window.title = "Floating Preview"
         window.contentViewController = hosting
         window.contentMinSize = NSSize(width: 480, height: 360)
-        window.center()
-        window.isReleasedWhenClosed = false
         window.tabbingMode = .disallowed
-        // Persist size + position across launches so the user's resize sticks.
-        window.setFrameAutosaveName("nextnote.preview.window")
+        window.setFrameAutosaveName("nextnote.preview.window.v2")
+        if window.frame.width < 480 || window.frame.height < 360 {
+            window.setContentSize(NSSize(width: 980, height: 720))
+            window.center()
+        }
+        window.isReleasedWhenClosed = false
 
         if UserDefaults.standard.bool(forKey: alwaysOnTopKey) {
             window.level = .floating
@@ -102,6 +105,10 @@ struct FloatingPreviewHost: View {
             Divider()
             content
         }
+        .frame(
+            minWidth: 480, idealWidth: 980, maxWidth: .infinity,
+            minHeight: 360, idealHeight: 720, maxHeight: .infinity
+        )
     }
 
     private var toolbar: some View {
