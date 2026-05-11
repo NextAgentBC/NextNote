@@ -131,6 +131,16 @@ extension ContentView {
 
         ToolbarItem(placement: .primaryAction) {
             Button {
+                withAnimation { appState.showTerminal.toggle() }
+            } label: {
+                Image(systemName: appState.showTerminal ? "terminal.fill" : "terminal")
+                    .accessibilityLabel(appState.showTerminal ? "Hide AI Terminal" : "Show AI Terminal")
+            }
+            .help(appState.showTerminal ? "Hide AI Terminal (⌘`)" : "Show AI Terminal (⌘`)")
+        }
+
+        ToolbarItem(placement: .primaryAction) {
+            Button {
                 withAnimation { appState.isFocusMode = true }
             } label: {
                 Image(systemName: "arrow.up.left.and.arrow.down.right")

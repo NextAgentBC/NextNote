@@ -17,16 +17,21 @@ struct AIProvider: Codable, Identifiable, Hashable {
 
     static let presets: [AIProvider] = [localTailnet, openAI, anthropic, ollamaLocalhost, custom]
 
+    // Local tailnet AI now routed through credbroker (100.79.97.110:8800),
+    // which proxies to local-llm + local-embed services and authenticates via
+    // Tailscale identity — no bearer token required. The OpenAI-compat path
+    // is /v1/proxy/<service>, and AIService appends /v1/chat/completions or
+    // /v1/embeddings as usual.
     static let localTailnet = AIProvider(
         id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
-        name: "Local (Tailnet Qwen3.6)",
+        name: "Local (credbroker → Qwen3 30B)",
         kind: .openaiCompat,
-        chatBaseURL: URL(string: "http://100.113.17.31:9999")!,
-        chatModel: "Qwen3.6-35B-A3B-MXFP4_MOE.gguf",
-        embedBaseURL: URL(string: "http://100.79.97.110:8081")!,
+        chatBaseURL: URL(string: "http://100.79.97.110:8800/v1/proxy/local-llm")!,
+        chatModel: "chat",
+        embedBaseURL: URL(string: "http://100.79.97.110:8800/v1/proxy/local-embed")!,
         embedModel: "qwen3-embed-8b",
         vectorDSN: "postgresql://hermes:hermes_memory_2026@100.79.97.110:5433/hermes_memory",
-        requiresAPIKey: true
+        requiresAPIKey: false
     )
 
     static let openAI = AIProvider(

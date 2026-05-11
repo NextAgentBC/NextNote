@@ -83,34 +83,27 @@ final class AIService: ObservableObject {
                             return
                         }
 
-                        var buffer = ""
-                        for try await byte in bytes {
-                            let char = String(bytes: [byte], encoding: .utf8) ?? ""
-                            buffer += char
-
-                            while let range = buffer.range(of: "\n\n") {
-                                let chunk = String(buffer[buffer.startIndex..<range.lowerBound])
-                                buffer = String(buffer[range.upperBound...])
-
-                                for line in chunk.split(separator: "\n", omittingEmptySubsequences: false) {
-                                    let lineStr = String(line)
-                                    guard lineStr.hasPrefix("data: ") else { continue }
-                                    let payload = String(lineStr.dropFirst(6))
-                                    if payload == "[DONE]" {
-                                        continuation.finish()
-                                        return
-                                    }
-                                    if let data = payload.data(using: .utf8),
-                                       let sseChunk = try? JSONDecoder().decode(SSEChunk.self, from: data),
-                                       let delta = sseChunk.choices.first?.delta {
-                                        if let reasoning = delta.reasoningContent, !reasoning.isEmpty {
-                                            continuation.yield(.reasoning(reasoning))
-                                        }
-                                        if let content = delta.content, !content.isEmpty {
-                                            continuation.yield(.content(content))
-                                        }
-                                    }
-                                }
+                        // Iterate by SSE line. `bytes.lines` handles UTF-8
+                        // decoding across byte boundaries — the previous
+                        // per-byte loop dropped every multi-byte char
+                        // (Chinese/emoji/etc), so non-ASCII replies arrived
+                        // as empty content deltas.
+                        for try await line in bytes.lines {
+                            guard line.hasPrefix("data: ") else { continue }
+                            let payload = String(line.dropFirst(6))
+                            if payload == "[DONE]" {
+                                continuation.finish()
+                                return
+                            }
+                            guard let data = payload.data(using: .utf8),
+                                  let sseChunk = try? JSONDecoder().decode(SSEChunk.self, from: data),
+                                  let delta = sseChunk.choices.first?.delta
+                            else { continue }
+                            if let reasoning = delta.reasoningContent, !reasoning.isEmpty {
+                                continuation.yield(.reasoning(reasoning))
+                            }
+                            if let content = delta.content, !content.isEmpty {
+                                continuation.yield(.content(content))
                             }
                         }
                         continuation.finish()

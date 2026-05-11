@@ -33,6 +33,11 @@ struct ContentView: View {
             libraryRoots.migrateLegacyVaultBookmarkIfNeeded()
             vault.adoptNotesRoot(libraryRoots.notesRoot)
         }
+        // Finder "Open With NextNote" / "Always Open With" / default-app double-click.
+        // Routes md/text → tab, pdf/epub → Book library import + book tab.
+        .onOpenURL { url in
+            appState.openExternalFile(url: url, vault: vault, context: modelContext)
+        }
         .onReceive(libraryRoots.$notesRoot) { url in
             vault.adoptNotesRoot(url)
         }
@@ -43,6 +48,13 @@ struct ContentView: View {
                 modelContext.insert(doc)
                 appState.openNewTab(document: doc)
             }
+        }
+        // Defer MediaLibrary's bookmark resolution + file-exists prune off the
+        // main thread — used to freeze launch when the library had >100 tracks.
+        // bootstrap() is idempotent; the ambient-folder prompt waits until it
+        // finishes so shouldPromptForAmbientFolder reflects restored state.
+        .task {
+            await MediaLibrary.shared.bootstrap()
             if MediaLibrary.shared.shouldPromptForAmbientFolder {
                 showAmbientFolderPrompt = true
             }

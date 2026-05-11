@@ -7,7 +7,9 @@ final class AppState: ObservableObject {
     let aiService: AIService = AIService()
 
     // MARK: - Vector DB
-    let vectorStore: VectorStore = {
+    // Lazy so MultiThreadedEventLoopGroup spin-up doesn't block app launch.
+    // Consumers always touch it via `await` from background contexts.
+    lazy var vectorStore: VectorStore = {
         let dsn = VectorDBSettings.shared.dsn
         return VectorStore(dsn: dsn)
     }()

@@ -146,6 +146,11 @@ struct MacTextEditorView: NSViewRepresentable {
             attributed.addAttribute(.paragraphStyle, value: para,
                                     range: NSRange(location: 0, length: attributed.length))
 
+            // setAttributedString replaces the entire textStorage, which
+            // forces NSTextView to re-lay-out and snaps scroll back to the
+            // top of the doc. Snapshot the visible scroll origin (top-left
+            // of the scroller's clip view) and re-apply it after the update.
+            let scrollOrigin = textView.enclosingScrollView?.contentView.bounds.origin
             withoutUndoRegistration(for: textView) {
                 textView.textStorage?.setAttributedString(attributed)
             }
@@ -155,6 +160,10 @@ struct MacTextEditorView: NSViewRepresentable {
                 .paragraphStyle: para,
             ]
             textView.selectedRanges = selectedRanges
+            if let origin = scrollOrigin, let clip = textView.enclosingScrollView?.contentView {
+                clip.scroll(to: origin)
+                textView.enclosingScrollView?.reflectScrolledClipView(clip)
+            }
         }
 
         // MARK: - Snippet insert (undo-safe)
@@ -242,6 +251,7 @@ struct MacTextEditorView: NSViewRepresentable {
 
             if parent.isMarkdown {
                 let selectedRanges = textView.selectedRanges
+                let scrollOrigin = textView.enclosingScrollView?.contentView.bounds.origin
                 let attributed = MarkdownHighlighter.highlightMac(newText, fontSize: parent.fontSize)
                 let para = makeParagraphStyle(lineSpacing: parent.lineSpacing)
                 attributed.addAttribute(.paragraphStyle, value: para,
@@ -250,6 +260,13 @@ struct MacTextEditorView: NSViewRepresentable {
                     textView.textStorage?.setAttributedString(attributed)
                 }
                 textView.selectedRanges = selectedRanges
+                // Re-highlighting replaces the entire textStorage on every
+                // keystroke, which would otherwise snap the scroller back to
+                // the top of long docs. Restore the prior scroll origin.
+                if let origin = scrollOrigin, let clip = textView.enclosingScrollView?.contentView {
+                    clip.scroll(to: origin)
+                    textView.enclosingScrollView?.reflectScrolledClipView(clip)
+                }
             }
         }
     }

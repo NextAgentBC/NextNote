@@ -22,10 +22,16 @@ struct SearchBarView: View {
                     .onSubmit { findNext() }
 
                 if !appState.searchText.isEmpty {
-                    Text("\(currentMatch)/\(matchCount)")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
+                    if appState.activeTab == nil {
+                        Text("Open a note to search")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("\(currentMatch)/\(matchCount)")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
                 }
 
                 // Search options
@@ -108,6 +114,15 @@ struct SearchBarView: View {
         .onChange(of: appState.searchText) { _, _ in
             updateMatchCount()
         }
+        .onChange(of: appState.searchOptions.caseSensitive) { _, _ in
+            updateMatchCount()
+        }
+        .onChange(of: appState.searchOptions.useRegex) { _, _ in
+            updateMatchCount()
+        }
+        .onChange(of: appState.activeTabId) { _, _ in
+            updateMatchCount()
+        }
     }
 
     private func updateMatchCount() {
@@ -118,7 +133,10 @@ struct SearchBarView: View {
             return
         }
 
-        let options: String.CompareOptions = appState.searchOptions.caseSensitive ? [] : .caseInsensitive
+        var options: String.CompareOptions = appState.searchOptions.caseSensitive ? [] : .caseInsensitive
+        if appState.searchOptions.useRegex {
+            options.insert(.regularExpression)
+        }
         var count = 0
         var searchRange = document.content.startIndex..<document.content.endIndex
 

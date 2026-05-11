@@ -24,9 +24,13 @@ enum LibraryAutoClean {
 
     static func run(
         library: MediaLibrary,
-        underRoot root: URL,
+        underRoot rawRoot: URL,
         onStatus: @MainActor @escaping (Status) -> Void
     ) async {
+        // Nest under `<rawRoot>/Music/` when the caller's root isn't already
+        // a music leaf. Stops artist folders from landing as siblings of
+        // notes/ebooks when mediaRoot is the vault root.
+        let root = MediaCategorizer.organizeRoot(under: rawRoot)
         let snapshot = library.tracks
         let total = snapshot.count
         var renamed = 0
@@ -61,21 +65,23 @@ enum LibraryAutoClean {
                     context: nil,
                     existingArtists: knownArtists.sorted()
                 )
-                guard let rawArtist = cleaned.artist,
-                      let rawSong = cleaned.song else {
+                guard let rawSong = cleaned.song else {
                     skipped += 1
                     onStatus(.progress(idx: i + 1, total: total,
                                        message: "\(progressPrefix) ⊘ \(track.title) — not enough info"))
                     continue
                 }
 
-                // Normalize collabs. When the LLM returned "A, B" we still
-                // write it as "A & B" for a per-pairing folder.
-                let folderName = artistFolder(from: rawArtist)
-                let cleanFolder = MediaCategorizer.sanitize(folderName).nonEmpty
-                    ?? MediaCategorizer.sanitize(rawArtist).nonEmpty
-                    ?? "Unknown"
-                let cleanArtist = MediaCategorizer.sanitize(rawArtist)
+                // Folder + filename prefix share the same label. `folderName`
+                // already collapses artist + collaborators into "A & B"
+                // (MediaCategorizer.Cleaned), so a collab like {artist:"A",
+                // collaborators:["B"]} lands in "A & B/A & B - Song.ext"
+                // instead of the previous bug where the folder was "A & B/"
+                // but the filename prefix was just the bare "A".
+                let rawLabel = cleaned.folderName
+                    ?? cleaned.artist
+                    ?? ""
+                let cleanLabel = MediaCategorizer.sanitize(rawLabel).nonEmpty ?? "Unknown"
                 let cleanSong = MediaCategorizer.sanitize(rawSong)
 
                 // Drop yt-dlp [videoId] from the canonical filename so
@@ -83,7 +89,9 @@ enum LibraryAutoClean {
                 // names. videoID is captured above for any downstream
                 // workflows that still need it (none currently).
                 _ = videoID
-                let newBase = "\(cleanArtist) - \(cleanSong)"
+                let cleanFolder = cleanLabel
+                let cleanArtist = cleanLabel
+                let newBase = "\(cleanLabel) - \(cleanSong)"
 
                 let ext = track.url.pathExtension
                 let newFilename = ext.isEmpty ? newBase : "\(newBase).\(ext)"

@@ -248,10 +248,11 @@ enum MediaCategorizer {
     @discardableResult
     static func organize(
         url: URL,
-        underRoot root: URL,
+        underRoot rawRoot: URL,
         preferredTitle: String? = nil,
         context: Context? = nil
     ) async throws -> URL {
+        let root = organizeRoot(under: rawRoot)
         let title = preferredTitle?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
             ?? url.deletingPathExtension().lastPathComponent
         let existing = existingFolders(in: root)
@@ -350,6 +351,24 @@ enum MediaCategorizer {
             }
         }
         return out
+    }
+
+    /// Resolve where artist folders should actually live. If the caller's
+    /// `root` is already a leaf named "Music" (or any user-chosen media leaf
+    /// like "音乐"), use it directly. Otherwise nest into `<root>/Music/`
+    /// so we don't pollute the parent — common case is the user pointed
+    /// mediaRoot at the vault root itself, which contains notes/ebooks and
+    /// must NOT get artist folders dropped next to them.
+    static func organizeRoot(under root: URL) -> URL {
+        let leaf = root.lastPathComponent
+        if leaf.localizedCaseInsensitiveCompare("Music") == .orderedSame
+            || leaf.localizedCaseInsensitiveCompare("Media") == .orderedSame
+            || leaf == "音乐" {
+            return root
+        }
+        let nested = root.appendingPathComponent("Music", isDirectory: true)
+        try? FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+        return nested
     }
 
     /// Snapshot of subfolders at `root` — used as context so the LLM reuses

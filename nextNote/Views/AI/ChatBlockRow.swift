@@ -130,6 +130,41 @@ struct ChatBlockRow: View {
                     .foregroundStyle(Color.orange.opacity(0.8))
             }
             Spacer()
+
+            // One-click affordances — duplicates the right-click menu actions
+            // so the common case (copy / drop into the note) doesn't require
+            // hunting through the context menu. Visible only once the block
+            // finishes streaming so partial responses don't get inserted.
+            if (block.state == .done || block.state == .cancelled) && !block.response.isEmpty {
+                Button {
+                    onCopy()
+                } label: {
+                    Image(systemName: "doc.on.doc")
+                        .font(.system(size: 10))
+                }
+                .buttonStyle(.plain)
+                .help("Copy response")
+
+                Button {
+                    onInsertIntoNote()
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "square.and.pencil")
+                            .font(.system(size: 10))
+                        Text("Insert")
+                            .font(.system(size: 10, design: .monospaced))
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(Color.accentColor.opacity(0.18))
+                    )
+                    .foregroundStyle(Color.accentColor)
+                }
+                .buttonStyle(.plain)
+                .help("Insert response into the active note at the cursor")
+            }
         }
         .foregroundStyle(.tertiary)
     }

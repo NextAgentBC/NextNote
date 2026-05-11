@@ -15,7 +15,15 @@ final class AIProviderSettings: ObservableObject {
     private init() {
         if let data = UserDefaults.standard.data(forKey: Self.defaultsKey),
            let decoded = try? JSONDecoder().decode(AIProvider.self, from: data) {
-            activeProvider = decoded
+            // Bundled presets (matched by stable UUID) get their fields
+            // refreshed on launch so endpoint/model changes ship without
+            // requiring users to re-pick the preset. User-edited custom
+            // entries (id outside the preset set) are left untouched.
+            if let preset = AIProvider.presets.first(where: { $0.id == decoded.id }) {
+                activeProvider = preset
+            } else {
+                activeProvider = decoded
+            }
         } else {
             activeProvider = .localTailnet
         }

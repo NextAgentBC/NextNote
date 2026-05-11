@@ -49,14 +49,52 @@ final class MediaLibrary: ObservableObject {
         AmbientFolderBookmark.markPrompted()
     }
 
+    private var didBootstrap = false
+
     private init() {
-        restoreTracks()
+        // Empty on purpose — bookmark resolution + fileExists per track on the
+        // main thread froze the app at launch. Call bootstrap() once from the
+        // first ContentView appearance instead.
+    }
+
+    /// Loads tracks/playlists/ambient folder off the main thread, then prunes
+    /// any tracks whose underlying file vanished. Safe to call multiple times.
+    func bootstrap() async {
+        guard !didBootstrap else { return }
+        didBootstrap = true
+
+        let restored = await Task.detached(priority: .userInitiated) {
+            MediaTrackPersistence.load()
+        }.value
+        // Dedupe by on-disk path. Earlier builds re-ran restoreTracks on
+        // hot paths and appended duplicates each time, which is why the
+        // sidebar showed two identical "Jay Chou - Mojito (2)" rows.
+        var seenPaths = Set<String>()
+        var deduped: [Track] = []
+        for t in restored.tracks {
+            let key = t.url.standardizedFileURL.path
+            if seenPaths.insert(key).inserted {
+                deduped.append(t)
+            }
+        }
+        tracks.append(contentsOf: deduped)
+        scopedURLs.formUnion(restored.scopedURLs)
+        if deduped.count != restored.tracks.count {
+            // Persist the cleaned list so the bad rows don't come back next
+            // launch.
+            persistTracks()
+        }
+
         restorePlaylists()
         restoreAmbientFolder()
-        // Drop tracks whose file vanished since last launch (deleted in
-        // Finder, external drive gone, vault cleared, etc). Keeps the
-        // library from resurrecting ghost entries through stale bookmarks.
-        _ = pruneMissing()
+
+        let snapshot = tracks
+        let missing = await Task.detached(priority: .utility) {
+            snapshot.filter { !FileManager.default.fileExists(atPath: $0.url.path) }
+        }.value
+        if !missing.isEmpty {
+            removeTracks(ids: Set(missing.map { $0.id }))
+        }
     }
 
     deinit {

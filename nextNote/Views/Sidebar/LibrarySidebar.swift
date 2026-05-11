@@ -18,7 +18,6 @@ struct LibrarySidebar: View {
     @Query(sort: \Book.title) var books: [Book]
 
     @State var ebooksExpanded = false
-    @State var mediaExpanded = false
     @State var assetsExpanded = false
     @State var expandedFolders: Set<String> = []
     @State var collapsedAssetFolders: Set<String> = []
@@ -34,7 +33,9 @@ struct LibrarySidebar: View {
     @State var draggingTray: LibraryTray?
 
     enum LibraryTray: String, CaseIterable, Identifiable {
-        case assets, ebooks, media
+        // Media tray removed from the sidebar — the bottom AmbientBar is the
+        // single source of truth for media browsing/playback now.
+        case assets, ebooks
         var id: String { rawValue }
     }
 
@@ -135,8 +136,6 @@ struct LibrarySidebar: View {
             assetsTray
         case .ebooks:
             ebooksTray
-        case .media:
-            mediaTray
         }
     }
 
