@@ -122,6 +122,10 @@ enum MarkdownToHTML {
         // <audio> depending on the file extension.
         result = MarkdownEmbeds.replace(in: result)
 
+        // Wiki-links BEFORE the standard `[text](url)` pass so the inner
+        // `[[…]]` brackets don't get swallowed by the looser regex.
+        result = replaceWikiLinks(in: result)
+
         // Links BEFORE escaping
         result = result.replacingOccurrences(
             of: #"\[([^\]]+)\]\(([^\)]+)\)"#,
@@ -137,6 +141,9 @@ enum MarkdownToHTML {
         result = result.replacingOccurrences(of: "%%LINK_START%%", with: "<a href=\"")
         result = result.replacingOccurrences(of: "%%LINK_TEXT%%", with: "\">")
         result = result.replacingOccurrences(of: "%%LINK_END%%", with: "</a>")
+        result = result.replacingOccurrences(of: "%%WIKI_START%%", with: "<a class=\"wikilink\" href=\"")
+        result = result.replacingOccurrences(of: "%%WIKI_TEXT%%", with: "\">")
+        result = result.replacingOccurrences(of: "%%WIKI_END%%", with: "</a>")
 
         // Bold
         result = result.replacingOccurrences(of: #"\*\*(.+?)\*\*"#, with: "<strong>$1</strong>", options: .regularExpression)
@@ -150,6 +157,38 @@ enum MarkdownToHTML {
         result = result.replacingOccurrences(of: #"`([^`]+)`"#, with: "<code>$1</code>", options: .regularExpression)
 
         return result
+    }
+
+    /// Convert `[[target]]` and `[[target|alias]]` into placeholder anchor
+    /// markers that escape unscathed through `escapeHTML`. ContentView's
+    /// nav delegate catches the `nextnote://wiki?target=…` href on click
+    /// and routes it via `WikiLinkResolver`.
+    private static func replaceWikiLinks(in text: String) -> String {
+        let pattern = #"\[\[([^\]\|\n]+?)(?:\|([^\]\n]+?))?\]\]"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return text }
+        let ns = text as NSString
+        let matches = regex.matches(in: text, range: NSRange(location: 0, length: ns.length))
+        guard !matches.isEmpty else { return text }
+        var output = ""
+        var cursor = 0
+        for match in matches {
+            let prefixLen = match.range.location - cursor
+            if prefixLen > 0 {
+                output += ns.substring(with: NSRange(location: cursor, length: prefixLen))
+            }
+            let target = ns.substring(with: match.range(at: 1))
+            let aliasRange = match.range(at: 2)
+            let label = aliasRange.location == NSNotFound
+                ? target
+                : ns.substring(with: aliasRange)
+            let encoded = target.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? target
+            output += "%%WIKI_START%%nextnote://wiki?target=\(encoded)%%WIKI_TEXT%%\(label)%%WIKI_END%%"
+            cursor = match.range.location + match.range.length
+        }
+        if cursor < ns.length {
+            output += ns.substring(with: NSRange(location: cursor, length: ns.length - cursor))
+        }
+        return output
     }
 
     static func escapeHTML(_ text: String) -> String {

@@ -44,6 +44,11 @@ struct LibrarySidebar: View {
             NotesSection()
                 .frame(maxHeight: .infinity)
 
+            // Pinned external folders. Hidden entirely when none pinned, so
+            // the sidebar looks identical to before for users who don't use
+            // the feature.
+            PinnedFoldersSection()
+
             // Trays share one scrollable region so a short window doesn't
             // clip the last tray off-screen.
             Divider()

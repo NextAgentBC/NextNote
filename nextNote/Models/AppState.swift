@@ -3,6 +3,10 @@ import Combine
 
 @MainActor
 final class AppState: ObservableObject {
+    init() {
+        restoreRecents()
+    }
+
     // MARK: - AI
     let aiService: AIService = AIService()
 
@@ -73,6 +77,23 @@ final class AppState: ObservableObject {
     @Published var pendingBookAnchor: String? = nil
     /// One-shot trigger from View > Rescan Library.
     @Published var triggerRescanLibrary: Bool = false
+
+    /// Quick switcher modal — ⌘P toggles. Lists recent + all vault files
+    /// with substring/subsequence fuzzy match.
+    @Published var showQuickSwitcher: Bool = false
+
+    /// AI summary sheet — set by Workflow > AI Summarize Note (⌥⌘S).
+    /// Non-nil = sheet visible; the value is the text being summarized.
+    @Published var pendingAISummary: String? = nil
+
+    /// Tags browser sheet — toggled by Workflow > Browse Tags…
+    @Published var showTagsBrowser: Bool = false
+
+    /// Most-recently-opened vault files. Newest first; capped at `maxRecents`
+    /// and persisted across launches.
+    @Published private(set) var recentVaultFiles: [RecentVaultEntry] = []
+    private let maxRecents = 30
+    private let recentsKey = "nextnote.recentFiles"
 
     /// One-shot trigger from File > Export > PDF…
     @Published var triggerExportPDF: Bool = false
@@ -182,12 +203,71 @@ final class AppState: ObservableObject {
         if let existingId = vaultTabByPath[relativePath],
            openTabs.contains(where: { $0.id == existingId }) {
             activeTabId = existingId
+            // Reuse the existing tab's title for the recents list — that's
+            // already the post-frontmatter resolved name, so we don't
+            // re-read the file.
+            let existingTitle = openTabs.first(where: { $0.id == existingId })?.document.title
+                ?? deriveTitle(from: relativePath)
+            recordRecent(relativePath: relativePath, title: existingTitle)
             return
         }
         let tab = TabItem(document: makeDocument())
+        // YAML frontmatter `title:` wins over the on-disk filename so tabs
+        // and recents show the friendly name without forcing every caller
+        // to parse it themselves.
+        if let fmTitle = FrontmatterParser.title(from: tab.document.content),
+           !fmTitle.isEmpty {
+            tab.document.title = fmTitle
+        }
         openTabs.append(tab)
         activeTabId = tab.id
         vaultTabByPath[relativePath] = tab.id
+        recordRecent(relativePath: relativePath, title: tab.document.title)
+    }
+
+    private func deriveTitle(from relativePath: String) -> String {
+        let last = (relativePath as NSString).lastPathComponent
+        return (last as NSString).deletingPathExtension
+    }
+
+    // MARK: - Recents
+
+    func recordRecent(relativePath: String, title: String) {
+        guard !relativePath.isEmpty else { return }
+        recentVaultFiles.removeAll { $0.relativePath == relativePath }
+        recentVaultFiles.insert(
+            RecentVaultEntry(relativePath: relativePath, title: title, lastOpened: Date()),
+            at: 0
+        )
+        if recentVaultFiles.count > maxRecents {
+            recentVaultFiles = Array(recentVaultFiles.prefix(maxRecents))
+        }
+        persistRecents()
+    }
+
+    func clearRecentFiles() {
+        recentVaultFiles = []
+        persistRecents()
+    }
+
+    /// Drop recents whose vault path no longer exists. Called after a rename
+    /// or delete so the menu doesn't surface dangling entries.
+    func pruneRecents(notIn validPaths: Set<String>) {
+        let before = recentVaultFiles.count
+        recentVaultFiles = recentVaultFiles.filter { validPaths.contains($0.relativePath) }
+        if recentVaultFiles.count != before { persistRecents() }
+    }
+
+    private func persistRecents() {
+        guard let data = try? JSONEncoder().encode(recentVaultFiles) else { return }
+        UserDefaults.standard.set(data, forKey: recentsKey)
+    }
+
+    private func restoreRecents() {
+        guard let data = UserDefaults.standard.data(forKey: recentsKey),
+              let decoded = try? JSONDecoder().decode([RecentVaultEntry].self, from: data)
+        else { return }
+        recentVaultFiles = decoded
     }
 
     func closeTab(id: UUID) {
@@ -244,6 +324,8 @@ final class AppState: ObservableObject {
             }
         }
         vaultTabByPath = updated
+        // Mirror the rewrite into recents so File > Open Recent keeps working.
+        rewriteRecents(from: oldPath, to: newPath, isDirectory: isDirectory)
     }
 
     /// Close any tabs that pointed at `deletedPath` (or children, if it was
@@ -258,6 +340,49 @@ final class AppState: ObservableObject {
             }
         }
         for id in idsToClose { closeTab(id: id) }
+        dropRecents(matching: deletedPath, isDirectory: isDirectory)
+    }
+
+    private func rewriteRecents(from oldPath: String, to newPath: String, isDirectory: Bool) {
+        let before = recentVaultFiles
+        let mapped: [RecentVaultEntry] = recentVaultFiles.map { entry in
+            if isDirectory {
+                let prefix = oldPath.hasSuffix("/") ? oldPath : oldPath + "/"
+                if entry.relativePath == oldPath || entry.relativePath.hasPrefix(prefix) {
+                    let suffix = String(entry.relativePath.dropFirst(oldPath.count))
+                    return RecentVaultEntry(
+                        relativePath: newPath + suffix,
+                        title: entry.title,
+                        lastOpened: entry.lastOpened
+                    )
+                }
+                return entry
+            }
+            if entry.relativePath == oldPath {
+                return RecentVaultEntry(
+                    relativePath: newPath,
+                    title: entry.title,
+                    lastOpened: entry.lastOpened
+                )
+            }
+            return entry
+        }
+        if mapped != before {
+            recentVaultFiles = mapped
+            persistRecents()
+        }
+    }
+
+    private func dropRecents(matching deletedPath: String, isDirectory: Bool) {
+        let before = recentVaultFiles.count
+        recentVaultFiles.removeAll { entry in
+            if isDirectory {
+                let prefix = deletedPath.hasSuffix("/") ? deletedPath : deletedPath + "/"
+                return entry.relativePath == deletedPath || entry.relativePath.hasPrefix(prefix)
+            }
+            return entry.relativePath == deletedPath
+        }
+        if recentVaultFiles.count != before { persistRecents() }
     }
 
     /// Register a path → tab mapping. Used when a newly-created vault file
@@ -284,6 +409,15 @@ final class AppState: ObservableObject {
 struct SnippetInsert: Equatable {
     let text: String
     let cursorOffset: Int  // characters from start of inserted text; 0 = before all text
+}
+
+/// One row in the Recent Files list. Vault-relative path + cached display
+/// title so the menu can render without rescanning the tree.
+struct RecentVaultEntry: Codable, Identifiable, Hashable {
+    let relativePath: String
+    let title: String
+    let lastOpened: Date
+    var id: String { relativePath }
 }
 
 struct TabItem: Identifiable {

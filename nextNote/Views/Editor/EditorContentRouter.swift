@@ -101,11 +101,11 @@ extension ContentView {
     func createVaultNote(inFolder parent: String) async {
         do {
             let newPath = try await vault.createNote(inFolder: parent, title: "Untitled")
-            guard let url = vault.url(for: newPath) else { return }
             let title = ((newPath as NSString).lastPathComponent as NSString).deletingPathExtension
+            // Skip on-disk read — vault.createNote writes initialContent="" so
+            // the freshly-created file is empty by definition.
             appState.openVaultFile(relativePath: newPath) {
-                let content = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
-                return TextDocument(title: title, content: content, fileType: .md)
+                TextDocument(title: title, content: "", fileType: .md)
             }
             appState.selectedSidebarPath = newPath
         } catch {

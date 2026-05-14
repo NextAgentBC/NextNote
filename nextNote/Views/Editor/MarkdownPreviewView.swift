@@ -1,6 +1,13 @@
 import SwiftUI
 import WebKit
 
+extension Notification.Name {
+    /// Posted when the user clicks a `[[wiki-link]]` in the markdown
+    /// preview. `userInfo["target"]` carries the raw target string from
+    /// the link's `nextnote://wiki?target=…` query.
+    static let nextNoteWikiLinkClicked = Notification.Name("nextnote.wikilink.clicked")
+}
+
 /// Renders markdown content into a WKWebView. Pure-function HTML
 /// generation lives in `MarkdownToHTML`, `MarkdownEmbeds`, and
 /// `MarkdownHTMLWrapper`. This file is just the SwiftUI / NSViewRep
@@ -26,12 +33,38 @@ struct MarkdownPreviewView: View {
 /// publish a new `markdown` value on every change, which would re-render the
 /// entire HTML and force a `loadFileURL` per character — visible as keystroke
 /// lag in split / preview mode. Coalesce reloads to one per ~350ms idle.
-final class MarkdownPreviewCoordinator {
+@MainActor
+final class MarkdownPreviewCoordinator: NSObject, WKNavigationDelegate {
     var pending: DispatchWorkItem?
     var lastMarkdown: String?
     var lastBaseURL: URL?
 
-    deinit { pending?.cancel() }
+    // The deinit dropped its cancel() — `pending` was non-Sendable, which
+    // Swift 6 flags inside an NSObject-derived nonisolated deinit. The
+    // work-item already captures `webView` weakly, so a stray firing after
+    // teardown just bails out cheaply.
+
+    // Intercept clicks on `[[wiki-link]]` anchors — those render with a
+    // `nextnote://wiki?target=…` href. Everything else (file:// preview
+    // assets, http(s) links) is allowed through.
+    func webView(_ webView: WKWebView,
+                 decidePolicyFor navigationAction: WKNavigationAction,
+                 decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        if let url = navigationAction.request.url,
+           url.scheme == "nextnote",
+           url.host == "wiki",
+           let comps = URLComponents(url: url, resolvingAgainstBaseURL: false),
+           let target = comps.queryItems?.first(where: { $0.name == "target" })?.value {
+            NotificationCenter.default.post(
+                name: .nextNoteWikiLinkClicked,
+                object: nil,
+                userInfo: ["target": target]
+            )
+            decisionHandler(.cancel)
+            return
+        }
+        decisionHandler(.allow)
+    }
 
     func schedule(in webView: WKWebView, markdown: String, baseURL: URL?) {
         if markdown == lastMarkdown && baseURL == lastBaseURL { return }
@@ -66,6 +99,7 @@ struct MarkdownWebView: NSViewRepresentable {
         config.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.setValue(false, forKey: "drawsBackground")
+        webView.navigationDelegate = context.coordinator
         context.coordinator.loadImmediately(in: webView, markdown: markdown, baseURL: baseURL)
         return webView
     }
@@ -88,6 +122,7 @@ struct MarkdownWebView: UIViewRepresentable {
         webView.isOpaque = false
         webView.backgroundColor = .clear
         webView.scrollView.backgroundColor = .clear
+        webView.navigationDelegate = context.coordinator
         context.coordinator.loadImmediately(in: webView, markdown: markdown, baseURL: baseURL)
         return webView
     }

@@ -32,7 +32,9 @@ final class PDFImporter {
     /// on content hash. Returns nil if a book with the same hash exists.
     @discardableResult
     func registerExisting(pdfURL: URL) async throws -> Book? {
-        let hash = try Self.fileSHA256(url: pdfURL)
+        let hash = try await Task.detached(priority: .userInitiated) {
+            try Self.fileSHA256(url: pdfURL)
+        }.value
         let dup = FetchDescriptor<Book>(predicate: #Predicate { $0.contentHash == hash })
         if let _ = try? context.fetch(dup).first { return nil }
 
@@ -119,10 +121,18 @@ final class PDFImporter {
 
     // MARK: - Internal
 
-    private static func fileSHA256(url: URL) throws -> String {
-        let data = try Data(contentsOf: url)
-        let h = SHA256.hash(data: data)
-        return h.compactMap { String(format: "%02x", $0) }.joined()
+    nonisolated private static func fileSHA256(url: URL) throws -> String {
+        // Stream the file in 64 KiB chunks so multi-hundred-MB PDFs don't
+        // get loaded fully into memory just to compute a dedupe hash.
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        var hasher = SHA256()
+        while true {
+            let chunk = try handle.read(upToCount: 1 << 16) ?? Data()
+            if chunk.isEmpty { break }
+            hasher.update(data: chunk)
+        }
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 }
 

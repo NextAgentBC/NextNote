@@ -8,6 +8,8 @@ import AppKit
 struct NextNoteCommands: Commands {
     @ObservedObject var appState: AppState
     @ObservedObject var libraryRoots: LibraryRoots
+    @ObservedObject var pinnedFolders: PinnedFoldersStore
+    @ObservedObject var vault: VaultStore
 
     var body: some Commands {
         // Replace the system "Save" entry so Cmd+S triggers our SwiftData save
@@ -24,6 +26,32 @@ struct NextNoteCommands: Commands {
                 appState.showFileImporter = true
             }
             .keyboardShortcut("o", modifiers: .command)
+
+            Button("Quick Switcher…") {
+                appState.showQuickSwitcher = true
+            }
+            .keyboardShortcut("p", modifiers: .command)
+
+            Button("Daily Note") {
+                Task { await appState.openDailyNote(vault: vault) }
+            }
+            .keyboardShortcut("d", modifiers: [.command, .shift])
+
+            Menu("Open Recent") {
+                if appState.recentVaultFiles.isEmpty {
+                    Text("No Recent Files")
+                } else {
+                    ForEach(appState.recentVaultFiles) { entry in
+                        Button(entry.title.isEmpty ? entry.relativePath : entry.title) {
+                            openRecent(entry)
+                        }
+                    }
+                    Divider()
+                    Button("Clear Menu") {
+                        appState.clearRecentFiles()
+                    }
+                }
+            }
 
             Divider()
 
@@ -82,6 +110,19 @@ struct NextNoteCommands: Commands {
                 appState.showShortcuts.toggle()
             }
             .keyboardShortcut("/", modifiers: .command)
+
+            Divider()
+
+            Button("AI Summarize Note") {
+                triggerAISummary()
+            }
+            .keyboardShortcut("s", modifiers: [.command, .option])
+            .disabled(appState.activeTab == nil)
+
+            Button("Browse Tags…") {
+                appState.showTagsBrowser = true
+            }
+            .keyboardShortcut("t", modifiers: [.command, .option])
         }
 
         // Merge into the system View menu (NavigationSplitView already adds
@@ -113,6 +154,13 @@ struct NextNoteCommands: Commands {
 
         // Library menu — one-stop controls for Notes / Media / Ebooks roots.
         CommandMenu("Library") {
+            Button("Open Folder in Sidebar…") {
+                Task { await pinnedFolders.pickAndAdd() }
+            }
+            .keyboardShortcut("o", modifiers: [.command, .shift])
+
+            Divider()
+
             Button("Change Notes Folder…") {
                 Task { await libraryRoots.pick(kind: .notes) }
             }
@@ -159,6 +207,29 @@ struct NextNoteCommands: Commands {
                 navigateTab(direction: -1)
             }
             .keyboardShortcut("[", modifiers: [.command, .shift])
+
+            // ⌘1…⌘9 jump straight to tab N (⌘9 always goes to the last
+            // tab so the binding is stable even with fewer tabs open).
+            Group {
+                Button("Tab 1") { activateTab(index: 0) }
+                    .keyboardShortcut("1", modifiers: .command)
+                Button("Tab 2") { activateTab(index: 1) }
+                    .keyboardShortcut("2", modifiers: .command)
+                Button("Tab 3") { activateTab(index: 2) }
+                    .keyboardShortcut("3", modifiers: .command)
+                Button("Tab 4") { activateTab(index: 3) }
+                    .keyboardShortcut("4", modifiers: .command)
+                Button("Tab 5") { activateTab(index: 4) }
+                    .keyboardShortcut("5", modifiers: .command)
+                Button("Tab 6") { activateTab(index: 5) }
+                    .keyboardShortcut("6", modifiers: .command)
+                Button("Tab 7") { activateTab(index: 6) }
+                    .keyboardShortcut("7", modifiers: .command)
+                Button("Tab 8") { activateTab(index: 7) }
+                    .keyboardShortcut("8", modifiers: .command)
+                Button("Last Tab") { activateLastTab() }
+                    .keyboardShortcut("9", modifiers: .command)
+            }
         }
 
         // Media menu — ambient player control.
@@ -269,8 +340,41 @@ struct NextNoteCommands: Commands {
         appState.activeTabId = appState.openTabs[newIndex].id
     }
 
+    private func activateTab(index: Int) {
+        guard index >= 0, index < appState.openTabs.count else { return }
+        appState.activeTabId = appState.openTabs[index].id
+    }
+
+    private func activateLastTab() {
+        guard let last = appState.openTabs.last else { return }
+        appState.activeTabId = last.id
+    }
+
     private func revealInFinder(_ url: URL?) {
         FinderActions.reveal(url)
+    }
+
+    private func triggerAISummary() {
+        guard let tab = appState.activeTab else { return }
+        let text = tab.document.content
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        appState.pendingAISummary = text
+    }
+
+    private func openRecent(_ entry: RecentVaultEntry) {
+        guard let url = vault.url(for: entry.relativePath) else { return }
+        let ext = (entry.relativePath as NSString).pathExtension.lowercased()
+        let isBinary = ext == "pdf" || ext == "epub" || VaultStore.imageExts.contains(ext)
+        let title = entry.title.isEmpty
+            ? ((entry.relativePath as NSString).lastPathComponent as NSString).deletingPathExtension
+            : entry.title
+        appState.openVaultFile(relativePath: entry.relativePath) {
+            let content = isBinary
+                ? ""
+                : (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+            return TextDocument(title: title, content: content, fileType: FileType.from(url: url))
+        }
+        appState.selectedSidebarPath = entry.relativePath
     }
 }
 #endif

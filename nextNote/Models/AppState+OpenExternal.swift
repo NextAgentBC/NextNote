@@ -40,18 +40,35 @@ extension AppState {
     private func openTextLike(url: URL, vault: VaultStore) {
         let type = FileType.from(url: url)
         let title = url.deletingPathExtension().lastPathComponent
+        let rel = vault.relativePath(for: url)
 
-        if let rel = vault.relativePath(for: url) {
-            openVaultFile(relativePath: rel) {
-                let content = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
-                return TextDocument(title: title, content: content, fileType: type)
+        // Re-grip security scope inside the Task — the caller's `defer { stop }`
+        // fires the moment openExternalFile returns. The Task closure runs
+        // after that on its own actor, so it needs its own access window.
+        Task { [weak self] in
+            let content = await Self.readUTF8(url: url)
+            await MainActor.run {
+                guard let self else { return }
+                if let rel {
+                    self.openVaultFile(relativePath: rel) {
+                        TextDocument(title: title, content: content, fileType: type)
+                    }
+                } else {
+                    let doc = TextDocument(title: title, content: content, fileType: type)
+                    self.openNewTab(document: doc)
+                }
             }
-            return
         }
+    }
 
-        let content = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
-        let doc = TextDocument(title: title, content: content, fileType: type)
-        openNewTab(document: doc)
+    /// Off-MainActor UTF-8 read. Big text files (logs, JSON dumps) would
+    /// otherwise freeze the UI on "Open With NextNote" routes.
+    private static func readUTF8(url: URL) async -> String {
+        await Task.detached(priority: .userInitiated) {
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            return (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+        }.value
     }
 
     // MARK: - PDF / EPUB
@@ -65,7 +82,7 @@ extension AppState {
                 return
             }
             // Dup — find the existing Book by content hash and open it.
-            if let book = try findBook(matching: url, in: context) {
+            if let book = try await findBook(matching: url, in: context) {
                 openBookTab(bookID: book.id, title: book.title)
             }
         } catch {
@@ -81,7 +98,7 @@ extension AppState {
                 openBookTab(bookID: book.id, title: book.title)
                 return
             }
-            if let book = try findBook(matching: url, in: context) {
+            if let book = try await findBook(matching: url, in: context) {
                 openBookTab(bookID: book.id, title: book.title)
             }
         } catch {
@@ -89,9 +106,22 @@ extension AppState {
         }
     }
 
-    private func findBook(matching url: URL, in context: ModelContext) throws -> Book? {
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    private func findBook(matching url: URL, in context: ModelContext) async throws -> Book? {
+        // Stream-hash off-MainActor — `Data(contentsOf:)` would load the
+        // full PDF/EPUB into RAM on the UI thread just to recompute a hash
+        // we only need for dedup lookup.
+        let hash: String? = try? await Task.detached(priority: .userInitiated) {
+            let handle = try FileHandle(forReadingFrom: url)
+            defer { try? handle.close() }
+            var hasher = SHA256()
+            while true {
+                let chunk = try handle.read(upToCount: 1 << 16) ?? Data()
+                if chunk.isEmpty { break }
+                hasher.update(data: chunk)
+            }
+            return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+        }.value
+        guard let hash else { return nil }
         let descriptor = FetchDescriptor<Book>(predicate: #Predicate { $0.contentHash == hash })
         return try context.fetch(descriptor).first
     }

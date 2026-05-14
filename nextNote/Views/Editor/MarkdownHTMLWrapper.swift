@@ -61,6 +61,13 @@ enum MarkdownHTMLWrapper {
             }
             hr { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
             a { color: #007AFF; }
+            a.wikilink {
+                background: rgba(0, 122, 255, 0.10);
+                padding: 1px 4px;
+                border-radius: 4px;
+                text-decoration: none;
+            }
+            a.wikilink:hover { background: rgba(0, 122, 255, 0.20); }
             table { border-collapse: collapse; width: 100%; }
             th, td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; }
             th { background: var(--code-bg); }

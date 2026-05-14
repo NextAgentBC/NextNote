@@ -5,6 +5,8 @@ struct ContentView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var vault: VaultStore
     @EnvironmentObject var libraryRoots: LibraryRoots
+    @EnvironmentObject var backlinksIndex: BacklinksIndex
+    @EnvironmentObject var tagsIndex: TagsIndex
     @Environment(\.modelContext) var modelContext
     @Environment(\.scenePhase) private var scenePhase
     @Query(sort: \TextDocument.modifiedAt, order: .reverse) private var documents: [TextDocument]
@@ -32,6 +34,9 @@ struct ContentView: View {
         .onAppear {
             libraryRoots.migrateLegacyVaultBookmarkIfNeeded()
             vault.adoptNotesRoot(libraryRoots.notesRoot)
+            // Backlinks index follows vault tree changes from here on.
+            backlinksIndex.wireToVault(vault)
+            tagsIndex.wireToVault(vault)
         }
         // Finder "Open With NextNote" / "Always Open With" / default-app double-click.
         // Routes md/text → tab, pdf/epub → Book library import + book tab.
@@ -90,6 +95,10 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .reembedLibraryRequested)) { _ in
             Task { @MainActor in await reembedLibrary() }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .nextNoteWikiLinkClicked)) { note in
+            guard let target = note.userInfo?["target"] as? String else { return }
+            handleWikiLinkClick(target: target)
+        }
         // Rescan whenever the window regains focus — user dropped a file in
         // Finder, switches back, expects to see it instantly. Debounce kept
         // generous (60s) because the focus event fires on every Cmd-Tab and
@@ -124,6 +133,27 @@ struct ContentView: View {
             if phase == .inactive || phase == .background {
                 saveAll()
             }
+        }
+        // Quick switcher (⌘P) — fuzzy-find any vault file by name.
+        .sheet(isPresented: $appState.showQuickSwitcher) {
+            QuickSwitcherSheet()
+                .environmentObject(appState)
+                .environmentObject(vault)
+        }
+        // AI summary sheet — triggered by Workflow > AI Summarize Note.
+        .sheet(isPresented: Binding(
+            get: { appState.pendingAISummary != nil },
+            set: { if !$0 { appState.pendingAISummary = nil } }
+        )) {
+            AISummarySheet(sourceText: appState.pendingAISummary ?? "")
+                .environmentObject(appState)
+        }
+        // Tags browser — triggered by Workflow > Browse Tags.
+        .sheet(isPresented: $appState.showTagsBrowser) {
+            TagsBrowserSheet()
+                .environmentObject(appState)
+                .environmentObject(vault)
+                .environmentObject(tagsIndex)
         }
         // Media library sheet — opened via AmbientBar button or Cmd+Shift+M.
         .sheet(isPresented: $appState.showMediaLibrary) {
@@ -218,6 +248,47 @@ struct ContentView: View {
             context: modelContext
         )
         await MediaLibrary.shared.scanRoot(libraryRoots.mediaRoot)
+    }
+
+    /// Resolve a clicked `[[wiki-link]]` target against the vault tree and
+    /// open the matching note. Falls back to creating a new note at the
+    /// vault root when the target doesn't exist yet — matches the Obsidian
+    /// flow users expect.
+    private func handleWikiLinkClick(target: String) {
+        let paths = WikiLinkResolver.indexNotes(in: vault.tree)
+        if let hit = WikiLinkResolver.resolve(target: target, paths: paths),
+           let url = vault.url(for: hit) {
+            let ext = (hit as NSString).pathExtension.lowercased()
+            let isBinary = ext == "pdf" || ext == "epub" || VaultStore.imageExts.contains(ext)
+            let title = ((hit as NSString).lastPathComponent as NSString).deletingPathExtension
+            appState.openVaultFile(relativePath: hit) {
+                let content = isBinary
+                    ? ""
+                    : (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+                return TextDocument(title: title, content: content, fileType: FileType.from(url: url))
+            }
+            appState.selectedSidebarPath = hit
+            return
+        }
+
+        // Miss → spawn a new note at the vault root with the target as the
+        // title. User can move it from the sidebar afterwards.
+        Task {
+            do {
+                let header = "# \(target)\n\n"
+                let newPath = try await vault.createNote(
+                    inFolder: "",
+                    title: target,
+                    initialContent: header
+                )
+                appState.openVaultFile(relativePath: newPath) {
+                    TextDocument(title: target, content: header, fileType: .md)
+                }
+                appState.selectedSidebarPath = newPath
+            } catch {
+                appState.lastSaveError = "Could not create note for [[\(target)]]: \(error.localizedDescription)"
+            }
+        }
     }
 
     @MainActor

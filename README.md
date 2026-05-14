@@ -33,10 +33,36 @@ First launch: pick (or accept defaults for) three folders — Notes, Media, Eboo
 ## Features
 
 - **Notes.** Plain `.md` files on disk, folder tree in the sidebar, Markdown editor with split preview, search, tabs, focus mode, per-note chat, dashboard, daily digest.
+- **Wiki-links.** `[[Note]]` and `[[Note|alias]]` syntax in markdown — preview renders them as clickable pills. Click → opens the target note, or creates it at the vault root if missing.
+- **Backlinks.** Status bar pill shows the count of notes that link to the active note via `[[…]]`. Click to expand a list of source notes; click a source to jump there. Index auto-rebuilds in the background on every vault edit.
+- **Tags.** Inline `#tag` plus YAML frontmatter `tags: [...]` are indexed across the vault. **Workflow → Browse Tags…** (⌥⌘T) opens a two-pane browser: tags + counts on the left, notes for the selected tag on the right.
+- **Quick switcher.** ⌘P opens a fuzzy-find palette over every note in the vault (exact / prefix / contains / subsequence scoring). Empty query shows your most-recent files first.
+- **Recent files.** `File → Open Recent` keeps the last 30 opens across launches, auto-pruned on rename / delete.
+- **Pinned folders.** `Library → Open Folder in Sidebar…` (⇧⌘O) — pick any folder anywhere on disk and pin it to the sidebar with a security-scoped bookmark. Browse + open files without making them part of the Notes vault.
+- **Daily note.** ⇧⌘D opens or creates `<vault>/Daily/YYYY-MM-DD.md` with a date heading.
+- **Frontmatter titles.** `title: My Better Title` in YAML frontmatter overrides the on-disk filename in tabs, recents, and quick switcher.
+- **AI summarize.** ⌥⌘S streams a 3-5 bullet summary of the active note. Uses the same provider stack as inline AI tools.
+- **Tab jumps.** ⌘1…⌘8 jump straight to tab N; ⌘9 jumps to the last tab.
+- **Reading time.** Status bar shows estimated reading time (200 wpm) + unsaved-changes dot.
 - **Ebooks.** `.epub` reader inline: TOC, page turn (click edge / arrows / space), highlights, fonts, themes. Auto-scanned from the Ebooks root.
 - **Media.** Music and video auto-scanned from the Media root. Click a track → `AmbientPlayer` starts; click a video → inline `MediaPlayerView`.
 - **AI.** Polish / summarize / translate / grammar / continue writing. Swap providers in Settings — MLX on-device, remote OpenAI-compatible (Ollama, vLLM, LM Studio, any HTTP endpoint), or Google Gemini (free tier with automatic key rotation).
 - **YouTube.** Paste URL → `yt-dlp` downloads to the Media folder (mp3 / mp4). Needs `yt-dlp` installed; `ffmpeg` unlocks mp3 + ≥1080p video.
+
+## Keyboard shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| ⌘P | Quick switcher |
+| ⇧⌘D | Daily note |
+| ⇧⌘O | Open folder in sidebar |
+| ⌘1…⌘8 | Jump to tab N (⌘9 = last) |
+| ⌥⌘S | AI summarize note |
+| ⌥⌘T | Browse tags |
+| ⌘⇧K | AI terminal |
+| ⌘⇧T | Show shell |
+| ⌘⇧P | Floating preview |
+| ⌘/ | Shortcuts overlay |
 
 ## Build targets
 

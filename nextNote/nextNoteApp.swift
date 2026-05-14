@@ -7,6 +7,9 @@ struct NextNoteApp: App {
     @StateObject private var vaultStore = VaultStore()
     @StateObject private var libraryRoots = LibraryRoots()
     @StateObject private var assetCatalog = AssetCatalog()
+    @StateObject private var pinnedFolders = PinnedFoldersStore()
+    @StateObject private var backlinksIndex = BacklinksIndex()
+    @StateObject private var tagsIndex = TagsIndex()
 
     var sharedModelContainer: ModelContainer = {
         let schema = Schema(versionedSchema: NextNoteSchemaV7.self)
@@ -26,11 +29,14 @@ struct NextNoteApp: App {
                 .environmentObject(vaultStore)
                 .environmentObject(libraryRoots)
                 .environmentObject(assetCatalog)
+                .environmentObject(pinnedFolders)
+                .environmentObject(backlinksIndex)
+                .environmentObject(tagsIndex)
                 .frame(minWidth: 700, minHeight: 500)
         }
         .modelContainer(sharedModelContainer)
         .commands {
-            NextNoteCommands(appState: appState, libraryRoots: libraryRoots)
+            NextNoteCommands(appState: appState, libraryRoots: libraryRoots, pinnedFolders: pinnedFolders, vault: vaultStore)
         }
 
         Settings {
@@ -39,6 +45,9 @@ struct NextNoteApp: App {
                 .environmentObject(vaultStore)
                 .environmentObject(libraryRoots)
                 .environmentObject(assetCatalog)
+                .environmentObject(pinnedFolders)
+                .environmentObject(backlinksIndex)
+                .environmentObject(tagsIndex)
         }
         #else
         WindowGroup {
@@ -47,6 +56,9 @@ struct NextNoteApp: App {
                 .environmentObject(vaultStore)
                 .environmentObject(libraryRoots)
                 .environmentObject(assetCatalog)
+                .environmentObject(pinnedFolders)
+                .environmentObject(backlinksIndex)
+                .environmentObject(tagsIndex)
         }
         .modelContainer(sharedModelContainer)
         #endif

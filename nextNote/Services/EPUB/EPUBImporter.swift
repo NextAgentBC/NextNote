@@ -97,13 +97,17 @@ final class EPUBImporter {
         let scoped = sourceURL.startAccessingSecurityScopedResource()
         defer { if scoped { sourceURL.stopAccessingSecurityScopedResource() } }
 
-        // Unzip to a scratch dir first so we can read metadata and pick a slug.
+        // Unzip + parse + hash on background — these are the import freeze
+        // hotspots (multi-MB EPUBs can take seconds on first read). Keep the
+        // SwiftData + vault file copy on the MainActor below.
         let scratchID = UUID()
         let scratchDir = Self.unzipDir(for: scratchID)
-        try EPUBParser.unzip(epubURL: sourceURL, to: scratchDir)
-        let parsed = try EPUBParser.parse(unzippedRoot: scratchDir)
-
-        let hash = try fileSHA256(url: sourceURL)
+        let (parsed, hash): (ParsedEPUB, String) = try await Task.detached(priority: .userInitiated) {
+            try EPUBParser.unzip(epubURL: sourceURL, to: scratchDir)
+            let parsed = try EPUBParser.parse(unzippedRoot: scratchDir)
+            let hash = try Self.fileSHA256(url: sourceURL)
+            return (parsed, hash)
+        }.value
 
         // De-dupe by content hash.
         let dupDescriptor = FetchDescriptor<Book>(
@@ -243,7 +247,9 @@ final class EPUBImporter {
     /// nil if one with the same hash already exists.
     @discardableResult
     func registerExisting(epubURL: URL) async throws -> Book? {
-        let hash = try fileSHA256(url: epubURL)
+        let hash = try await Task.detached(priority: .userInitiated) {
+            try Self.fileSHA256(url: epubURL)
+        }.value
         let dupDescriptor = FetchDescriptor<Book>(
             predicate: #Predicate { $0.contentHash == hash }
         )
@@ -251,8 +257,10 @@ final class EPUBImporter {
 
         let bookID = UUID()
         let unzipDest = Self.unzipDir(for: bookID)
-        try EPUBParser.unzip(epubURL: epubURL, to: unzipDest)
-        let parsed = try EPUBParser.parse(unzippedRoot: unzipDest)
+        let parsed: ParsedEPUB = try await Task.detached(priority: .userInitiated) {
+            try EPUBParser.unzip(epubURL: epubURL, to: unzipDest)
+            return try EPUBParser.parse(unzippedRoot: unzipDest)
+        }.value
 
         // Path is vault-relative when inside vault; otherwise absolute (prefix "/").
         let relativePath: String = vault.relativePath(for: epubURL) ?? epubURL.path
@@ -350,7 +358,7 @@ final class EPUBImporter {
         return trimmed.isEmpty ? "book-\(hashPrefix)" : "\(trimmed)-\(hashPrefix)"
     }
 
-    private func fileSHA256(url: URL) throws -> String {
+    nonisolated static func fileSHA256(url: URL) throws -> String {
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
         var hasher = SHA256()
