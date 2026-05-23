@@ -94,7 +94,7 @@ enum MarkdownEmbeds {
             return "<audio controls preload=\"metadata\"><source src=\"\(src)\"></audio>"
         case "YOUTUBE":
             if let videoID = extractYouTubeID(from: src) {
-                return "<iframe width=\"560\" height=\"315\" src=\"https://www.youtube.com/embed/\(videoID)\" allow=\"accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture\" allowfullscreen style=\"border: none; border-radius: 8px;\"></iframe>"
+                return "<iframe width=\"560\" height=\"315\" src=\"https://www.youtube-nocookie.com/embed/\(videoID)\" allow=\"accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture\" allowfullscreen style=\"border: none; border-radius: 8px;\"></iframe>"
             }
             return "<img src=\"\(src)\" alt=\"\(alt)\">"
         default:

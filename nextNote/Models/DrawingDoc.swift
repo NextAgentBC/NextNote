@@ -70,20 +70,26 @@ struct DrawPage: Codable {
     /// Free-floating, movable + resizable images (pasted screenshots) placed
     /// in page coordinates, drawn under the ink.
     var images: [PlacedImage]
+    /// Placed YouTube video cards (thumbnail + click-to-play), movable +
+    /// resizable in page coordinates, drawn over the ink.
+    var videos: [PlacedVideo]
 
-    init(strokes: [CodableStroke] = [], background: String? = nil, images: [PlacedImage] = []) {
+    init(strokes: [CodableStroke] = [], background: String? = nil,
+         images: [PlacedImage] = [], videos: [PlacedVideo] = []) {
         self.strokes = strokes
         self.background = background
         self.images = images
+        self.videos = videos
     }
 
-    private enum CodingKeys: String, CodingKey { case strokes, background, images }
+    private enum CodingKeys: String, CodingKey { case strokes, background, images, videos }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         strokes = (try? c.decode([CodableStroke].self, forKey: .strokes)) ?? []
         background = try? c.decode(String.self, forKey: .background)
         images = (try? c.decode([PlacedImage].self, forKey: .images)) ?? []
+        videos = (try? c.decode([PlacedVideo].self, forKey: .videos)) ?? []
     }
 
     func encode(to encoder: Encoder) throws {
@@ -91,12 +97,25 @@ struct DrawPage: Codable {
         try c.encode(strokes, forKey: .strokes)
         try c.encodeIfPresent(background, forKey: .background)
         try c.encode(images, forKey: .images)
+        try c.encode(videos, forKey: .videos)
     }
 }
 
 /// A placed image on a page: asset path + frame in page coordinates.
 struct PlacedImage: Codable {
     var path: String
+    var x: Double
+    var y: Double
+    var w: Double
+    var h: Double
+}
+
+/// A placed YouTube video card: the 11-char video id + frame in page
+/// coordinates. Rendered as a thumbnail with a play button; clicking swaps
+/// it for an inline WKWebView player. Only the id is stored, so the doc stays
+/// small and portable (the thumbnail is fetched on demand).
+struct PlacedVideo: Codable {
+    var youtubeID: String
     var x: Double
     var y: Double
     var w: Double

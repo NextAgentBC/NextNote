@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.0 — 2026-05-23
+
+### YouTube video embedding — notes + drawings
+
+- **Markdown.** A YouTube link alone on its own line now renders as an inline player in the preview. The `![](url)` image form still works, and an inline `[text](url)` link stays a normal link — so you keep the choice between embedding and linking.
+- **Drawing notes.** New **Embed YouTube** button on the drawing toolbar: paste/type a link and a video card lands on the page — thumbnail + play button, movable and resizable in Select mode (locked 16:9), click to play in place, ✕ to collapse. Stored in the `.nndraw` file.
+- **Placed-card CRUD.** Placed videos *and* images now select on a single click, show a delete (✕) handle, move by drag, resize from the corner, and delete with the Delete key.
+
+### Fixed
+
+- **"This video is unavailable / Error 152".** Embeds now load from the `youtube-nocookie.com` origin. YouTube started rejecting embeds whose origin is `youtube.com` (`embedder.identity.denied`), which had broken playback for every embedded video. (Videos whose owner disables embedding still can't play in any app — that's a per-video YouTube policy, not something a client can override.)
+
 ## 0.4.0 — 2026-05-23
 
 ### Drawing notes + PDF markup

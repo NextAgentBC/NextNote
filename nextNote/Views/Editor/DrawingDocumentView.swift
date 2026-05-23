@@ -48,13 +48,15 @@ struct DrawingDocumentView: View {
         var strokes: [DrawStroke]
         var background: String?
         var images: [PlacedImage]
+        var videos: [PlacedVideo]
     }
     private struct ImgSel: Equatable { var page: Int; var index: Int }
+    private struct VidSel: Equatable { var page: Int; var index: Int }
 
     private static let minZoom: CGFloat = 0.25
     private static let maxZoom: CGFloat = 4.0
 
-    @State private var pages: [VMPage] = [VMPage(strokes: [], background: nil, images: [])]
+    @State private var pages: [VMPage] = [VMPage(strokes: [], background: nil, images: [], videos: [])]
     @State private var bgCache: [Int: NSImage] = [:]
     @State private var imgCache: [String: NSImage] = [:]
     @State private var current: DrawStroke?
@@ -77,6 +79,10 @@ struct DrawingDocumentView: View {
     @State private var isPressing = false
     @State private var selectedImage: ImgSel?
     @State private var imgBaseline: CGPoint?
+    @State private var selectedVideo: VidSel?
+    @State private var vidBaseline: CGPoint?
+    @State private var playingVideo: VidSel?
+    @State private var thumbCache: [String: NSImage] = [:]
     #if os(macOS)
     @State private var flagsMonitor: Any?
     #endif
@@ -92,7 +98,7 @@ struct DrawingDocumentView: View {
     }
     /// No ink, no backgrounds, no placed images anywhere — a pristine canvas.
     private var isDrawingEmpty: Bool {
-        pages.allSatisfy { $0.strokes.isEmpty && $0.background == nil && $0.images.isEmpty }
+        pages.allSatisfy { $0.strokes.isEmpty && $0.background == nil && $0.images.isEmpty && $0.videos.isEmpty }
     }
 
     var body: some View {
@@ -106,7 +112,8 @@ struct DrawingDocumentView: View {
                 Text(saveError).font(.caption).foregroundStyle(.red).padding(6)
             }
         }
-        .onChange(of: tool) { _, t in if t != .select { selectedImage = nil } }
+        .onChange(of: tool) { _, t in if t != .select { selectedImage = nil; selectedVideo = nil; playingVideo = nil } }
+        .onDeleteCommand { deleteSelected() }
         .onAppear {
             loadIfNeeded()
             #if os(macOS)
@@ -202,6 +209,11 @@ struct DrawingDocumentView: View {
                     placedImageView(page: i, index: j)
                 }
             }
+            if pages.indices.contains(i) {
+                ForEach(pages[i].videos.indices, id: \.self) { j in
+                    placedVideoView(page: i, index: j)
+                }
+            }
             Canvas { context, _ in
                 var ctx = context
                 ctx.scaleBy(x: zoom, y: zoom)
@@ -274,6 +286,15 @@ struct DrawingDocumentView: View {
         }
         .frame(width: img.w * zoom, height: img.h * zoom)
         .overlay { if selected { Rectangle().stroke(Color.accentColor, lineWidth: 2) } }
+        .overlay(alignment: .topLeading) {
+            if selected {
+                Button(role: .destructive) { deleteSelected() } label: {
+                    Image(systemName: "xmark.circle.fill").font(.title3)
+                        .foregroundStyle(.white, .red)
+                }
+                .buttonStyle(.plain).offset(x: -7, y: -7).help("Delete image")
+            }
+        }
         .overlay(alignment: .bottomTrailing) {
             if selected {
                 Image(systemName: "arrow.up.left.and.arrow.down.right.circle.fill")
@@ -297,6 +318,7 @@ struct DrawingDocumentView: View {
         }
         .position(x: (img.x + img.w / 2) * zoom, y: (img.y + img.h / 2) * zoom)
         .allowsHitTesting(tool == .select)
+        .onTapGesture { if tool == .select { selectedVideo = nil; selectedImage = ImgSel(page: i, index: j) } }
         .gesture(
             DragGesture()
                 .onChanged { v in
@@ -308,6 +330,101 @@ struct DrawingDocumentView: View {
                     pages[i].images[j].y = base.y + v.translation.height / zoom
                 }
                 .onEnded { _ in imgBaseline = nil; scheduleSave() }
+        )
+    }
+
+    private func placedVideoView(page i: Int, index j: Int) -> some View {
+        let vid = pages[i].videos[j]
+        let sel = VidSel(page: i, index: j)
+        let selected = (selectedVideo == sel) && tool == .select
+        let playing = (playingVideo == sel)
+        return ZStack {
+            if playing {
+                YouTubeEmbedWebView(youtubeID: vid.youtubeID)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+            } else {
+                Group {
+                    if let ns = thumbCache[vid.youtubeID] {
+                        Image(nsImage: ns).resizable().interpolation(.medium)
+                            .aspectRatio(contentMode: .fill)
+                    } else {
+                        Color.black.opacity(0.85)
+                    }
+                }
+                .frame(width: vid.w * zoom, height: vid.h * zoom)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay {
+                    Button {
+                        guard tool == .select else { return }
+                        selectedImage = nil; selectedVideo = sel; playingVideo = sel
+                    } label: {
+                        Image(systemName: "play.circle.fill")
+                            .font(.system(size: 44))
+                            .foregroundStyle(.white.opacity(0.92))
+                            .shadow(radius: 4)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .frame(width: vid.w * zoom, height: vid.h * zoom)
+        .overlay { if selected { RoundedRectangle(cornerRadius: 8).stroke(Color.accentColor, lineWidth: 2) } }
+        .overlay(alignment: .topLeading) {
+            if selected && !playing {
+                Button(role: .destructive) { deleteSelected() } label: {
+                    Image(systemName: "xmark.circle.fill").font(.title3)
+                        .foregroundStyle(.white, .red)
+                }
+                .buttonStyle(.plain).offset(x: -7, y: -7).help("Delete video")
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            if playing {
+                Button { playingVideo = nil } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(.white, .black.opacity(0.55))
+                }
+                .buttonStyle(.plain).padding(6)
+            }
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if selected && !playing {
+                Image(systemName: "arrow.up.left.and.arrow.down.right.circle.fill")
+                    .foregroundStyle(Color.accentColor)
+                    .background(Circle().fill(.white))
+                    .offset(x: 7, y: 7)
+                    .highPriorityGesture(
+                        DragGesture()
+                            .onChanged { v in
+                                if vidBaseline == nil { vidBaseline = CGPoint(x: vid.w, y: vid.h) }
+                                guard let base = vidBaseline, pages.indices.contains(i),
+                                      pages[i].videos.indices.contains(j) else { return }
+                                let newW = max(120, base.x + v.translation.width / zoom)
+                                pages[i].videos[j].w = newW
+                                pages[i].videos[j].h = max(68, newW * 9.0 / 16.0)
+                            }
+                            .onEnded { _ in vidBaseline = nil; scheduleSave() }
+                    )
+            }
+        }
+        .position(x: (vid.x + vid.w / 2) * zoom, y: (vid.y + vid.h / 2) * zoom)
+        .allowsHitTesting(tool == .select)
+        .gesture(TapGesture().onEnded {
+            if tool == .select { selectedImage = nil; selectedVideo = sel }
+        }, including: playing ? .subviews : .all)
+        .gesture(
+            DragGesture()
+                .onChanged { v in
+                    selectedImage = nil; selectedVideo = sel
+                    if vidBaseline == nil { vidBaseline = CGPoint(x: vid.x, y: vid.y) }
+                    guard let base = vidBaseline, pages.indices.contains(i),
+                          pages[i].videos.indices.contains(j) else { return }
+                    pages[i].videos[j].x = base.x + v.translation.width / zoom
+                    pages[i].videos[j].y = base.y + v.translation.height / zoom
+                }
+                .onEnded { _ in vidBaseline = nil; scheduleSave() },
+            including: playing ? .subviews : .all
         )
     }
 
@@ -340,13 +457,15 @@ struct DrawingDocumentView: View {
                 .help("Paste image / screenshot (⌘V)")
             Button { importPDF() } label: { Image(systemName: "doc.badge.plus") }
                 .help("Import a PDF as page backgrounds")
+            Button { embedYouTube() } label: { Image(systemName: "play.rectangle") }
+                .help("Embed a YouTube video (paste or type a link)")
             if markdownSource != nil {
                 Button { syncFromMarkdown() } label: { Image(systemName: "doc.text.image") }
                     .help("Render the note's text as the background")
             }
-            if selectedImage != nil && tool == .select {
-                Button(role: .destructive) { deleteSelectedImage() } label: { Image(systemName: "trash") }
-                    .help("Delete selected image")
+            if (selectedImage != nil || selectedVideo != nil) && tool == .select {
+                Button(role: .destructive) { deleteSelected() } label: { Image(systemName: "trash") }
+                    .help("Delete selected item")
             }
             if importing { ProgressView().controlSize(.small) }
 
@@ -415,17 +534,26 @@ struct DrawingDocumentView: View {
 
     private func addPage() {
         current = nil
-        pages.append(VMPage(strokes: [], background: nil, images: []))
+        pages.append(VMPage(strokes: [], background: nil, images: [], videos: []))
         focusedPage = pages.count - 1
         scheduleSave()
     }
 
-    private func deleteSelectedImage() {
-        guard let sel = selectedImage, pages.indices.contains(sel.page),
-              pages[sel.page].images.indices.contains(sel.index) else { return }
-        pages[sel.page].images.remove(at: sel.index)
-        selectedImage = nil
-        scheduleSave()
+    private func deleteSelected() {
+        if let sel = selectedImage, pages.indices.contains(sel.page),
+           pages[sel.page].images.indices.contains(sel.index) {
+            pages[sel.page].images.remove(at: sel.index)
+            selectedImage = nil
+            scheduleSave()
+            return
+        }
+        if let sel = selectedVideo, pages.indices.contains(sel.page),
+           pages[sel.page].videos.indices.contains(sel.index) {
+            pages[sel.page].videos.remove(at: sel.index)
+            selectedVideo = nil
+            playingVideo = nil
+            scheduleSave()
+        }
     }
 
     // MARK: - Insert image / PDF
@@ -467,7 +595,7 @@ struct DrawingDocumentView: View {
                 let firstNew = pages.count
                 for img in images {
                     if let rel = DrawingAssets.savePNG(img, for: fileURL, prefix: "pdf") {
-                        pages.append(VMPage(strokes: [], background: rel, images: []))
+                        pages.append(VMPage(strokes: [], background: rel, images: [], videos: []))
                         bgCache[pages.count - 1] = img
                     }
                 }
@@ -498,7 +626,7 @@ struct DrawingDocumentView: View {
                     guard !images.isEmpty else { saveError = "Couldn't render the note"; return }
                     for (i, img) in images.enumerated() {
                         if i >= pages.count {
-                            pages.append(VMPage(strokes: [], background: nil, images: []))
+                            pages.append(VMPage(strokes: [], background: nil, images: [], videos: []))
                         }
                         if let rel = DrawingAssets.savePNG(img, for: fileURL, prefix: "mdbg") {
                             pages[i].background = rel
@@ -513,10 +641,52 @@ struct DrawingDocumentView: View {
             }
         }
     }
+    private func embedYouTube() {
+        let pb = NSPasteboard.general.string(forType: .string) ?? ""
+        let prefill = MarkdownEmbeds.extractYouTubeID(from: pb) != nil ? pb : ""
+        let alert = NSAlert()
+        alert.messageText = "Embed YouTube video"
+        alert.informativeText = "Paste a YouTube link (youtube.com/watch?v=… or youtu.be/…)."
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
+        field.placeholderString = "https://youtu.be/…"
+        field.stringValue = prefill
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Embed")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        guard let id = MarkdownEmbeds.extractYouTubeID(from: field.stringValue) else {
+            saveError = "That doesn't look like a YouTube link"; return
+        }
+        guard pages.indices.contains(focusedPage) else { return }
+        let w = pageWidth * 0.6
+        let h = w * 9.0 / 16.0
+        let x = (pageWidth - w) / 2
+        let y = (pageHeight - h) / 2
+        pages[focusedPage].videos.append(PlacedVideo(youtubeID: id, x: x, y: y, w: w, h: h))
+        loadThumb(id)
+        tool = .select
+        selectedImage = nil
+        selectedVideo = VidSel(page: focusedPage, index: pages[focusedPage].videos.count - 1)
+        saveError = nil
+        scheduleSave()
+    }
+
+    private func loadThumb(_ id: String) {
+        guard thumbCache[id] == nil,
+              let url = URL(string: "https://img.youtube.com/vi/\(id)/hqdefault.jpg") else { return }
+        Task {
+            if let (data, _) = try? await URLSession.shared.data(from: url),
+               let img = NSImage(data: data) {
+                await MainActor.run { thumbCache[id] = img }
+            }
+        }
+    }
     #else
     private func paste() {}
     private func importPDF() {}
     private func syncFromMarkdown() {}
+    private func embedYouTube() {}
+    private func loadThumb(_ id: String) {}
     #endif
 
     // MARK: - Persistence
@@ -527,14 +697,15 @@ struct DrawingDocumentView: View {
         if let doc = DrawingIO.load(url: fileURL) {
             pageWidth = CGFloat(doc.pageWidth)
             pageHeight = CGFloat(doc.pageHeight)
-            pages = doc.pages.map { VMPage(strokes: $0.strokes.map { $0.drawStroke }, background: $0.background, images: $0.images) }
-            if pages.isEmpty { pages = [VMPage(strokes: [], background: nil, images: [])] }
+            pages = doc.pages.map { VMPage(strokes: $0.strokes.map { $0.drawStroke }, background: $0.background, images: $0.images, videos: $0.videos) }
+            if pages.isEmpty { pages = [VMPage(strokes: [], background: nil, images: [], videos: [])] }
             #if os(macOS)
             for (idx, pg) in pages.enumerated() {
                 if let bg = pg.background, let im = DrawingAssets.loadImage(bg, for: fileURL) { bgCache[idx] = im }
                 for pimg in pg.images where imgCache[pimg.path] == nil {
                     if let im = DrawingAssets.loadImage(pimg.path, for: fileURL) { imgCache[pimg.path] = im }
                 }
+                for pv in pg.videos { loadThumb(pv.youtubeID) }
             }
             #endif
         }
@@ -556,7 +727,7 @@ struct DrawingDocumentView: View {
             pageHeight: Double(pageHeight),
             pages: pages.map {
                 DrawPage(strokes: $0.strokes.map { CodableStroke(from: $0) },
-                         background: $0.background, images: $0.images)
+                         background: $0.background, images: $0.images, videos: $0.videos)
             }
         )
         do {

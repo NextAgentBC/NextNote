@@ -105,6 +105,15 @@ enum MarkdownToHTML {
             if let match = line.range(of: #"^(\s*)\d+\.\s+"#, options: .regularExpression) {
                 html += "<li>\(processInline(String(line[match.upperBound...])))</li>\n"; continue
             }
+            // A YouTube link alone on its own line becomes an embedded player.
+            // (The `![](url)` image form still works via processInline; an
+            // inline `[text](url)` link is left as a normal clickable link, so
+            // users keep the choice between embedding and linking.)
+            if trimmed.hasPrefix("http"), !trimmed.contains(" "),
+               MarkdownEmbeds.extractYouTubeID(from: trimmed) != nil {
+                html += MarkdownEmbeds.emitTag(kind: "YOUTUBE", src: trimmed, alt: "") + "\n"
+                continue
+            }
             if trimmed.isEmpty { html += "<br>\n"; continue }
             html += "<p>\(processInline(line))</p>\n"
         }
