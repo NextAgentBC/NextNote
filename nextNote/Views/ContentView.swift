@@ -33,6 +33,14 @@ struct ContentView: View {
         rootView
         .onAppear {
             libraryRoots.migrateLegacyVaultBookmarkIfNeeded()
+            // One-time: unify the sidebar under a single root — the parent of
+            // the old Notes folder (which holds notes/Media/ebooks as subfolders).
+            if !UserDefaults.standard.bool(forKey: "nextnote.unifyRootDone") {
+                if let notes = libraryRoots.notesRoot {
+                    libraryRoots.adopt(kind: .notes, url: notes.deletingLastPathComponent())
+                }
+                UserDefaults.standard.set(true, forKey: "nextnote.unifyRootDone")
+            }
             vault.adoptNotesRoot(libraryRoots.notesRoot)
             // Backlinks index follows vault tree changes from here on.
             backlinksIndex.wireToVault(vault)
@@ -127,6 +135,13 @@ struct ContentView: View {
             guard triggered else { return }
             saveAll()
             appState.triggerSave = false
+        }
+        // New Drawing (⌃⌘D) — create a .nndraw note in the target folder.
+        .onChange(of: appState.triggerNewDrawing) { _, v in
+            guard v else { return }
+            appState.triggerNewDrawing = false
+            let parent = targetFolderForNew()
+            Task { await createDrawingNote(inFolder: parent) }
         }
         // Save whenever the scene goes inactive (Cmd+Tab / home button / app switch)
         .onChange(of: scenePhase) { _, phase in
@@ -242,11 +257,9 @@ struct ContentView: View {
 
     @MainActor
     private func rescanLibrary() async {
-        await BookLibrary.scan(
-            vault: vault,
-            ebooksRoot: libraryRoots.ebooksRoot,
-            context: modelContext
-        )
+        // Ebooks/PDFs now live in the unified file tree (Books are created on
+        // demand when opened), so the separate Ebooks-folder scan is gone.
+        // Media still feeds the ambient player.
         await MediaLibrary.shared.scanRoot(libraryRoots.mediaRoot)
     }
 

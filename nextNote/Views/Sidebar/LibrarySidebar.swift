@@ -49,13 +49,8 @@ struct LibrarySidebar: View {
             // the feature.
             PinnedFoldersSection()
 
-            // Trays share one scrollable region so a short window doesn't
-            // clip the last tray off-screen.
-            Divider()
-            ScrollView {
-                bottomTrayStack
-            }
-            .frame(maxHeight: 420)
+            // Assets / Ebooks trays removed — everything lives in the single
+            // unified file tree above now (NotesSection), organized by folder.
         }
         .onChange(of: appState.triggerRescanLibrary) { _, v in
             if v { appState.triggerRescanLibrary = false }

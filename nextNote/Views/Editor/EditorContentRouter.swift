@@ -30,20 +30,74 @@ extension ContentView {
             } else {
                 MediaPlayerView(url: mediaURL, kind: kind)
             }
+        } else if let drawURL = drawingURL(for: tab) {
+            DrawingDocumentView(fileURL: drawURL)
+                .id(drawURL)
         } else {
             let baseURL = noteBaseURL(for: tab)
-            switch appState.previewMode {
-            case .editor:
-                EditorView(document: tab.document)
-            case .split:
-                HSplitOrVStack {
-                    EditorView(document: tab.document)
-                    MarkdownPreviewView(content: tab.document.content, baseURL: baseURL)
+            if let sidecar = drawingSidecarURL(for: tab) {
+                VStack(spacing: 0) {
+                    modePicker(for: tabIndex)
+                    Divider()
+                    if appState.openTabs.indices.contains(tabIndex),
+                       appState.openTabs[tabIndex].showDrawLayer {
+                        DrawingDocumentView(fileURL: sidecar,
+                                            markdownSource: tab.document.content,
+                                            markdownBaseURL: baseURL)
+                            .id(sidecar)
+                    } else {
+                        markdownBody(document: tab.document, baseURL: baseURL)
+                    }
                 }
-            case .preview:
-                MarkdownPreviewView(content: tab.document.content, baseURL: baseURL)
+            } else {
+                markdownBody(document: tab.document, baseURL: baseURL)
             }
         }
+    }
+
+    /// The markdown editor/preview (without the Text/Draw chrome).
+    @ViewBuilder
+    func markdownBody(document: TextDocument, baseURL: URL?) -> some View {
+        switch appState.previewMode {
+        case .editor:
+            EditorView(document: document)
+        case .split:
+            HSplitOrVStack {
+                EditorView(document: document)
+                MarkdownPreviewView(content: document.content, baseURL: baseURL)
+            }
+        case .preview:
+            MarkdownPreviewView(content: document.content, baseURL: baseURL)
+        }
+    }
+
+    /// Text | Draw switcher shown atop markdown notes.
+    @ViewBuilder
+    func modePicker(for tabIndex: Int) -> some View {
+        Picker("", selection: Binding(
+            get: { appState.openTabs.indices.contains(tabIndex) ? appState.openTabs[tabIndex].showDrawLayer : false },
+            set: { if appState.openTabs.indices.contains(tabIndex) { appState.openTabs[tabIndex].showDrawLayer = $0 } }
+        )) {
+            Text("Text").tag(false)
+            Text("Draw").tag(true)
+        }
+        .pickerStyle(.segmented)
+        .frame(width: 160)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+    }
+
+    /// Hidden drawing sidecar next to a markdown note: `.<base>.nndraw`.
+    /// Hidden (dot-prefixed) so the sidebar scanner skips it — one entry per note.
+    func drawingSidecarURL(for tab: TabItem) -> URL? {
+        guard preferences.vaultMode,
+              let rel = appState.vaultPath(forTabId: tab.id),
+              (rel as NSString).pathExtension.lowercased() == "md",
+              let fileURL = vault.url(for: rel)
+        else { return nil }
+        let dir = fileURL.deletingLastPathComponent()
+        let base = fileURL.deletingPathExtension().lastPathComponent
+        return dir.appendingPathComponent(".\(base).nndraw")
     }
 
     func mediaURL(for tab: TabItem) -> URL? {
@@ -64,6 +118,17 @@ extension ContentView {
               let fileURL = vault.url(for: relPath)
         else { return nil }
         return fileURL.deletingLastPathComponent()
+    }
+
+    /// Resolve a tab to its on-disk `.nndraw` URL, if it is a drawing note.
+    /// Drives the EditorContentRouter branch that shows `DrawingDocumentView`.
+    func drawingURL(for tab: TabItem) -> URL? {
+        guard preferences.vaultMode,
+              let relPath = appState.vaultPath(forTabId: tab.id),
+              (relPath as NSString).pathExtension.lowercased() == "nndraw",
+              let url = vault.url(for: relPath)
+        else { return nil }
+        return url
     }
 
     var emptyState: some View {
@@ -87,8 +152,10 @@ extension ContentView {
 
     func createNewDocument() {
         if preferences.vaultMode {
+            // Unified note: one note does both text + drawing. Default opens
+            // in Draw mode (user preference); toggle to Text to type.
             let parent = targetFolderForNew()
-            Task { await createVaultNote(inFolder: parent) }
+            Task { await createVaultNote(inFolder: parent, openInDraw: true) }
         } else {
             let defaultType = FileType(rawValue: preferences.defaultFileType) ?? .txt
             let doc = TextDocument(fileType: defaultType)
@@ -98,7 +165,7 @@ extension ContentView {
     }
 
     @MainActor
-    func createVaultNote(inFolder parent: String) async {
+    func createVaultNote(inFolder parent: String, openInDraw: Bool = false) async {
         do {
             let newPath = try await vault.createNote(inFolder: parent, title: "Untitled")
             let title = ((newPath as NSString).lastPathComponent as NSString).deletingPathExtension
@@ -107,9 +174,28 @@ extension ContentView {
             appState.openVaultFile(relativePath: newPath) {
                 TextDocument(title: title, content: "", fileType: .md)
             }
+            if openInDraw, let idx = appState.activeTabIndex {
+                appState.openTabs[idx].showDrawLayer = true
+            }
             appState.selectedSidebarPath = newPath
         } catch {
             appState.lastSaveError = "Create note failed: \(error.localizedDescription)"
+        }
+    }
+
+    /// Create a new `.nndraw` drawing note in `parent` and open it in a tab.
+    /// Mirrors `createVaultNote`; the DrawingDocumentView loads/saves the file.
+    @MainActor
+    func createDrawingNote(inFolder parent: String) async {
+        do {
+            let newPath = try await vault.createDrawing(inFolder: parent, title: "Drawing")
+            let title = ((newPath as NSString).lastPathComponent as NSString).deletingPathExtension
+            appState.openVaultFile(relativePath: newPath) {
+                TextDocument(title: title, content: "", fileType: .drawing)
+            }
+            appState.selectedSidebarPath = newPath
+        } catch {
+            appState.lastSaveError = "Create drawing failed: \(error.localizedDescription)"
         }
     }
 

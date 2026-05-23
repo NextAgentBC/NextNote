@@ -15,6 +15,10 @@ Local-first macOS app for Markdown notes, EPUB reading, and media playback. Thre
 - Known rough edges + UX roadmap → **[UX_AUDIT.md](UX_AUDIT.md)**
 - Changelog → **[CHANGELOG.md](CHANGELOG.md)**
 
+## Download
+
+Grab the latest signed + notarized `.dmg` from the **[Releases page](https://github.com/NextAgentBC/NextNote/releases/latest)** — drag it into `/Applications` and double-click. No Gatekeeper warnings: the app is Developer ID–signed and Apple-notarized. macOS 14+.
+
 ## Quick start
 
 ```sh
@@ -46,6 +50,8 @@ First launch: pick (or accept defaults for) three folders — Notes, Media, Eboo
 - **Reading time.** Status bar shows estimated reading time (200 wpm) + unsaved-changes dot.
 - **Ebooks.** `.epub` reader inline: TOC, page turn (click edge / arrows / space), highlights, fonts, themes. Auto-scanned from the Ebooks root.
 - **Media.** Music and video auto-scanned from the Media root. Click a track → `AmbientPlayer` starts; click a video → inline `MediaPlayerView`.
+- **Drawing notes.** Handwriting / sketch notes (`.nndraw`) stored as re-editable JSON in the vault — ink strokes across multiple pages, each with an optional full-page background (an imported PDF page render or a pasted screenshot) plus free-floating placed images. Reopen and keep editing the raw strokes anytime.
+- **PDF.** Inline PDF reader with outline TOC and page navigation; markup pages and send a page into a drawing note for annotation.
 - **AI.** Polish / summarize / translate / grammar / continue writing. Swap providers in Settings — MLX on-device, remote OpenAI-compatible (Ollama, vLLM, LM Studio, any HTTP endpoint), or Google Gemini (free tier with automatic key rotation).
 - **YouTube.** Paste URL → `yt-dlp` downloads to the Media folder (mp3 / mp4). Needs `yt-dlp` installed; `ffmpeg` unlocks mp3 + ≥1080p video.
 
@@ -116,7 +122,7 @@ Apple platform frameworks only beyond those.
 
 ## Status
 
-v0.1. Features listed above are working. Test target not added yet — high-value candidates are in [TUTORIAL.md](TUTORIAL.md#12-contributing).
+v0.4.0 — signed & notarized `.dmg` on the [Releases page](https://github.com/NextAgentBC/NextNote/releases/latest). Features listed above are working. Test target not added yet — high-value candidates are in [TUTORIAL.md](TUTORIAL.md#12-contributing).
 
 ## License
 

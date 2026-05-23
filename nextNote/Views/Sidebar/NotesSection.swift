@@ -9,10 +9,10 @@ struct NotesSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
-                Image(systemName: "note.text")
+                Image(systemName: "folder")
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(.secondary)
-                Text("Notes")
+                Text("Files")
                     .font(.caption.bold())
                     .foregroundStyle(.secondary)
                 if let name = vault.root?.lastPathComponent {

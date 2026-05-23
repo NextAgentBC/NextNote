@@ -17,7 +17,7 @@ enum FileCategory: String, CaseIterable {
     static func classify(ext: String) -> FileCategory {
         let e = ext.lowercased()
         if e == "epub" { return .book }
-        if e == "md" || e == "markdown" || e == "txt" { return .note }
+        if e == "md" || e == "markdown" || e == "txt" || e == "nndraw" { return .note }
         if MediaKind.audioExts.contains(e) { return .music }
         if MediaKind.videoExts.contains(e) { return .video }
         if Self.imageExts.contains(e) { return .image }

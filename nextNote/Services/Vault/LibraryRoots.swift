@@ -173,6 +173,14 @@ final class LibraryRoots: ObservableObject {
         return url
     }
 
+    /// Adopt a folder for a kind programmatically (no panel). Used by the
+    /// one-time "unify everything under a single root" migration.
+    @discardableResult
+    func adopt(kind: Kind, url: URL) -> URL? {
+        apply(kind: kind, url: url)
+        return self.url(for: kind)
+    }
+
     /// Use the default path under ~/Documents/nextNote/<Kind>. Creates the
     /// directory if missing.
     @discardableResult

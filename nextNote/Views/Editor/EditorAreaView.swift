@@ -15,6 +15,8 @@ extension ContentView {
             if let tab = appState.activeTab,
                tab.bookID == nil,
                tab.document.fileType == .md,
+               !tab.showDrawLayer,
+               drawingURL(for: tab) == nil,
                mediaURL(for: tab) == nil {
                 MarkdownToolbarView(
                     onInsert: { text, offset in

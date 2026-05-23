@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 #if os(macOS)
 import AppKit
 #endif
@@ -9,6 +10,7 @@ import AppKit
 struct VaultTreeView: View {
     @EnvironmentObject var vault: VaultStore
     @EnvironmentObject var appState: AppState
+    @Environment(\.modelContext) var modelContext
 
     // Rename / delete flow state. Path is vault-relative.
     @State var renameTarget: FolderNode?

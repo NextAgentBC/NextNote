@@ -98,6 +98,10 @@ final class AppState: ObservableObject {
     /// One-shot trigger from File > Export > PDF…
     @Published var triggerExportPDF: Bool = false
 
+    /// One-shot trigger from File > New Drawing (⌃⌘D). ContentView observes,
+    /// creates a `.nndraw` note in the target folder and opens it.
+    @Published var triggerNewDrawing: Bool = false
+
     /// One-shot Media-menu triggers — the Media Library sheet observes
     /// these and runs the matching action when it becomes visible.
     @Published var triggerRestoreTitles: Bool = false
@@ -434,6 +438,10 @@ struct TabItem: Identifiable {
     /// Assets sidebar. The editor body routes this to MediaPlayerView or an
     /// image preview, and save hooks ignore it.
     var externalMediaURL: URL?
+    /// For markdown notes: false = show the text editor, true = show the
+    /// drawing canvas (stored in a hidden `.<base>.nndraw` sidecar). Toggled
+    /// by the Text/Draw segmented control atop the editor.
+    var showDrawLayer: Bool = false
 
     init(document: TextDocument) {
         self.id = UUID()

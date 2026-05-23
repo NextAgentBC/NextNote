@@ -22,6 +22,7 @@ enum VaultSaveCoordinator {
                 tab.isModified,
                 let url = vault.url(for: relativePath),
                 MediaKind.from(url: url) == nil,
+                url.pathExtension.lowercased() != "nndraw",
                 !VaultStore.imageExts.contains(url.pathExtension.lowercased())
             else { continue }
             do {

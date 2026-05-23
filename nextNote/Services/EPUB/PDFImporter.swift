@@ -36,7 +36,16 @@ final class PDFImporter {
             try Self.fileSHA256(url: pdfURL)
         }.value
         let dup = FetchDescriptor<Book>(predicate: #Predicate { $0.contentHash == hash })
-        if let _ = try? context.fetch(dup).first { return nil }
+        if let existing = try? context.fetch(dup).first {
+            // Self-heal a stale path (e.g. after the library root changed) so
+            // the reader resolves the file at its current location.
+            let newRel = vault.relativePath(for: pdfURL) ?? pdfURL.path
+            if existing.relativePath != newRel {
+                existing.relativePath = newRel
+                try? context.save()
+            }
+            return existing
+        }
 
         #if os(macOS)
         guard let doc = PDFDocument(url: pdfURL) else {

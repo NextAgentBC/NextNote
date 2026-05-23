@@ -50,9 +50,15 @@ enum NoteIO {
     /// derived from `title`. On collision, appends " 2", " 3", ... until a free
     /// slot is found. Returns the URL actually written.
     static func createNote(inFolder folderURL: URL, title: String, initialContent: String = "") throws -> URL {
+        try createFile(inFolder: folderURL, title: title, ext: "md", initialContent: initialContent)
+    }
+
+    /// Generalized variant of `createNote` for non-markdown vault files (e.g.
+    /// `.nndraw` drawings). Same unique-name + atomic-write behavior.
+    static func createFile(inFolder folderURL: URL, title: String, ext: String, initialContent: String = "") throws -> URL {
         let base = sanitize(title.isEmpty ? "Untitled" : title)
         guard !base.isEmpty else { throw IOError.invalidName(title) }
-        let url = uniqueURL(inFolder: folderURL, baseName: base, ext: "md")
+        let url = uniqueURL(inFolder: folderURL, baseName: base, ext: ext)
         try write(url: url, content: initialContent)
         return url
     }

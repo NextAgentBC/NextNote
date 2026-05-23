@@ -28,6 +28,9 @@ enum FileType: String, Codable, CaseIterable, Identifiable {
     // Books
     case epub
 
+    // Drawing (re-editable ink note; JSON on disk)
+    case drawing = "nndraw"
+
     var id: String { rawValue }
 
     var displayName: String {
@@ -50,6 +53,7 @@ enum FileType: String, Codable, CaseIterable, Identifiable {
         case .rust:       return "Rust"
         case .shell:      return "Shell"
         case .epub:       return "EPUB"
+        case .drawing:    return "Drawing"
         }
     }
 
@@ -75,6 +79,7 @@ enum FileType: String, Codable, CaseIterable, Identifiable {
         case .rust:       return UTType(filenameExtension: "rs") ?? .sourceCode
         case .shell:      return UTType(filenameExtension: "sh") ?? .sourceCode
         case .epub:       return UTType(filenameExtension: "epub") ?? .data
+        case .drawing:    return UTType(filenameExtension: "nndraw") ?? .json
         }
     }
 
@@ -94,6 +99,7 @@ enum FileType: String, Codable, CaseIterable, Identifiable {
         case .go, .rust:  return "gearshape"
         case .shell:      return "terminal.fill"
         case .epub:       return "book"
+        case .drawing:    return "scribble.variable"
         }
     }
 
@@ -119,6 +125,7 @@ enum FileType: String, Codable, CaseIterable, Identifiable {
         case "rs":             return .rust
         case "sh", "bash", "zsh": return .shell
         case "epub":           return .epub
+        case "nndraw":         return .drawing
         default:               return .txt
         }
     }
@@ -128,6 +135,7 @@ enum FileType: String, Codable, CaseIterable, Identifiable {
         // Accept all known types plus a broad "source code" fallback
         var types: [UTType] = [
             .plainText, .commaSeparatedText, .log, .json, .xml, .html, .sourceCode,
+            .pdf,
         ]
         let extensions = ["md", "markdown", "yaml", "yml", "toml", "css",
                           "swift", "py", "js", "ts", "go", "rs", "sh", "bash", "zsh",

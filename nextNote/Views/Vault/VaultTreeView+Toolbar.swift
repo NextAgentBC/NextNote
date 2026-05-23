@@ -9,13 +9,10 @@ extension VaultTreeView {
         ToolbarItem(placement: .automatic) {
             Menu {
                 Button {
-                    newNoteParent = NewDocumentRouter.targetFolder(
-                        forSelection: appState.selectedSidebarPath,
-                        in: vault.tree
-                    )
-                    newNoteName = ""
+                    newNote(in: NewDocumentRouter.targetFolder(
+                        forSelection: appState.selectedSidebarPath, in: vault.tree))
                 } label: {
-                    Label("New Note", systemImage: "doc.badge.plus")
+                    Label("New Note", systemImage: "square.and.pencil")
                 }
                 Button {
                     newFolderParent = NewDocumentRouter.targetFolder(
@@ -33,6 +30,17 @@ extension VaultTreeView {
             .help("New Note / Folder")
             .disabled(vault.root == nil)
         }
+        #if os(macOS)
+        ToolbarItem(placement: .automatic) {
+            Button {
+                openPDFFromDisk()
+            } label: {
+                Image(systemName: "doc.viewfinder")
+            }
+            .help("Open a PDF to annotate")
+            .disabled(vault.root == nil)
+        }
+        #endif
         ToolbarItem(placement: .automatic) {
             Button {
                 Task { await vault.scan() }

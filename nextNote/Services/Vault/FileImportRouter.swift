@@ -16,7 +16,8 @@ enum FileImportRouter {
                 let importer = EPUBImporter(vault: vault, context: modelContext)
                 for url in epubs {
                     do {
-                        _ = try await importer.importEPUB(from: url)
+                        let book = try await importer.importEPUB(from: url)
+                        appState.openBookTab(bookID: book.id, title: book.title)
                     } catch {
                         appState.lastSaveError = "EPUB import failed: \(error.localizedDescription)"
                     }
@@ -29,7 +30,9 @@ enum FileImportRouter {
                 let importer = PDFImporter(vault: vault, context: modelContext)
                 for url in pdfs {
                     do {
-                        _ = try await importer.registerExisting(pdfURL: url)
+                        if let book = try await importer.registerExisting(pdfURL: url) {
+                            appState.openBookTab(bookID: book.id, title: book.title)
+                        }
                     } catch {
                         appState.lastSaveError = "PDF import failed: \(error.localizedDescription)"
                     }

@@ -97,6 +97,7 @@ extension VaultTreeView {
     func iconName(for node: FolderNode) -> String {
         if node.isDashboard { return "chart.bar.doc.horizontal" }
         let ext = (node.name as NSString).pathExtension.lowercased()
+        if ext == "nndraw" { return "scribble.variable" }
         if let kind = MediaKind.from(ext: ext) { return kind.iconName }
         if VaultStore.imageExts.contains(ext) { return "photo" }
         return "doc.text"
@@ -113,10 +114,9 @@ extension VaultTreeView {
                 .font(.caption)
                 .foregroundStyle(.tertiary)
             Button {
-                newNoteParent = ""
-                newNoteName = ""
+                newNote(in: "")
             } label: {
-                Label("New Note", systemImage: "doc.badge.plus")
+                Label("New Note", systemImage: "square.and.pencil")
             }
             .buttonStyle(.borderedProminent)
             Button {

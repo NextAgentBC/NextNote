@@ -51,8 +51,8 @@ enum VaultTreeScanner {
                 nodeCount += 1
                 children.append(scanDirectory(at: entry, relativePath: childRel, nodeCount: &nodeCount))
             } else {
-                let ext = entry.pathExtension.lowercased()
-                guard ext == "md" || imageExts.contains(ext) else { continue }
+                // Unified library: show every file type — the user organizes
+                // with folders, and the tab router opens each by extension.
                 let childRel = relativePath.isEmpty ? entryName : "\(relativePath)/\(entryName)"
                 nodeCount += 1
                 children.append(FolderNode(

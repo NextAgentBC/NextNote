@@ -1,6 +1,19 @@
 # Changelog
 
-## 0.4.0 — 2026-04-24
+## 0.4.0 — 2026-05-23
+
+### Drawing notes + PDF markup
+
+- **Handwriting / drawing notes** (`.nndraw`). Re-editable JSON documents stored in the Notes vault alongside `.md`. Each doc keeps raw stroke geometry (so a sketch can be reopened and edited, unlike a flattened PNG), spans multiple pages, and supports an optional full-page background per page — an imported PDF-page render or a pasted screenshot, drawn aspect-fit behind the ink — plus free-floating, movable/resizable placed images. Tolerant decoder migrates older v1/v2 layouts forward.
+- **PDF reader → drawing.** The inline PDF reader can push a page into a `.nndraw` note as a background to annotate over it; outline TOC and page navigation retained.
+
+### Wiki-links, backlinks, tags, quick switcher
+
+- **Wiki-links** `[[Note]]` / `[[Note|alias]]` render as clickable pills in preview; click opens or creates the target. **Backlinks** pill in the status bar lists notes linking to the active one, index auto-rebuilds on edit. **Tags** (inline `#tag` + frontmatter `tags:`) indexed vault-wide with a two-pane browser (⌥⌘T). **Quick switcher** (⌘P) fuzzy-finds every note. **Daily note** (⇧⌘D), **frontmatter titles**, **AI summarize** (⌥⌘S), tab jumps ⌘1–⌘9.
+
+### Distribution
+
+- **Signed + notarized.** 0.4.0 ships a Developer ID–signed, Apple-notarized DMG (and zip) — opens with zero Gatekeeper warnings on a clean machine.
 
 ### UX cleanup — menus, toolbar, sidebar tabs, terminal chrome
 

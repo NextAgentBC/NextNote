@@ -121,6 +121,21 @@ final class VaultStore: ObservableObject {
         return relPath
     }
 
+    /// Create a new, empty `.nndraw` drawing note under `parentRelativePath`.
+    /// Seeds the file with an empty `DrawingDoc` JSON and returns its
+    /// vault-relative path. Rescans so the sidebar shows it immediately.
+    @discardableResult
+    func createDrawing(inFolder parentRelativePath: String, title: String = "Drawing") async throws -> String {
+        guard let root else { throw NoteIO.IOError.notFound(URL(fileURLWithPath: "/")) }
+        let parentURL = parentRelativePath.isEmpty
+            ? root
+            : root.appending(path: parentRelativePath, directoryHint: .isDirectory)
+        let seed = (try? DrawingIO.encodeString(DrawingDoc())) ?? "{}"
+        let url = try NoteIO.createFile(inFolder: parentURL, title: title, ext: "nndraw", initialContent: seed)
+        await scan()
+        return VaultFSActions.relativePath(for: url, root: root) ?? url.lastPathComponent
+    }
+
     @discardableResult
     func createFolder(inParent parentRelativePath: String, name: String) async throws -> String {
         guard let root else { throw NoteIO.IOError.notFound(URL(fileURLWithPath: "/")) }
