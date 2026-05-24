@@ -17,7 +17,7 @@ struct DrawingDocumentView: View {
     var markdownBaseURL: URL? = nil
 
     enum Tool: String, CaseIterable, Identifiable {
-        case select, pen, highlighter, eraser
+        case select, pen, highlighter, eraser, lasso
         var id: String { rawValue }
         var icon: String {
             switch self {
@@ -25,6 +25,7 @@ struct DrawingDocumentView: View {
             case .pen:         return "pencil.tip"
             case .highlighter: return "highlighter"
             case .eraser:      return "eraser"
+            case .lasso:       return "lasso"
             }
         }
         var isDrawing: Bool { self == .pen || self == .highlighter || self == .eraser }
@@ -52,6 +53,7 @@ struct DrawingDocumentView: View {
     }
     private struct ImgSel: Equatable { var page: Int; var index: Int }
     private struct VidSel: Equatable { var page: Int; var index: Int }
+    private enum LassoMode { case draw, move }
 
     private static let minZoom: CGFloat = 0.25
     private static let maxZoom: CGFloat = 4.0
@@ -83,6 +85,15 @@ struct DrawingDocumentView: View {
     @State private var vidBaseline: CGPoint?
     @State private var playingVideo: VidSel?
     @State private var thumbCache: [String: NSImage] = [:]
+    // Lasso selection of ink strokes (operates on the focused page).
+    @State private var lassoPoints: [CGPoint] = []
+    @State private var strokeSel: Set<Int> = []
+    @State private var lassoPage: Int?
+    @State private var lassoMode: LassoMode?
+    @State private var moveStart: CGPoint?
+    @State private var moveSnapshot: [Int: [CGPoint]]?
+    // Shape-recognition toggle (snaps pen strokes to line/rect/ellipse/triangle).
+    @State private var snapShapes = false
     #if os(macOS)
     @State private var flagsMonitor: Any?
     #endif
@@ -112,7 +123,10 @@ struct DrawingDocumentView: View {
                 Text(saveError).font(.caption).foregroundStyle(.red).padding(6)
             }
         }
-        .onChange(of: tool) { _, t in if t != .select { selectedImage = nil; selectedVideo = nil; playingVideo = nil } }
+        .onChange(of: tool) { _, t in
+            if t != .select { selectedImage = nil; selectedVideo = nil; playingVideo = nil }
+            if t != .lasso { strokeSel = []; lassoPage = nil; lassoPoints = []; lassoMode = nil }
+        }
         .onDeleteCommand { deleteSelected() }
         .onAppear {
             loadIfNeeded()
@@ -138,13 +152,13 @@ struct DrawingDocumentView: View {
             Picker("Tool", selection: $tool) {
                 ForEach(Tool.allCases) { t in Image(systemName: t.icon).tag(t) }
             }
-            .pickerStyle(.segmented).labelsHidden().frame(width: 168).help("Tool")
+            .pickerStyle(.segmented).labelsHidden().frame(width: 210).help("Tool")
 
             Picker("Color", selection: $inkColor) {
                 ForEach(InkColor.allCases) { c in Text(c.rawValue.capitalized).tag(c) }
             }
             .pickerStyle(.segmented).labelsHidden().frame(width: 280)
-            .disabled(!tool.isDrawing || tool == .eraser)
+            .disabled((!tool.isDrawing && tool != .lasso) || tool == .eraser)
 
             HStack(spacing: 4) {
                 Image(systemName: "lineweight")
@@ -152,6 +166,10 @@ struct DrawingDocumentView: View {
                     .frame(width: 100)
             }
             .disabled(!tool.isDrawing || tool == .eraser)
+
+            Toggle(isOn: $snapShapes) { Image(systemName: "square.on.circle") }
+                .toggleStyle(.button)
+                .help("Snap shapes: pen strokes become a clean line / rectangle / ellipse / triangle")
 
             Spacer()
 
@@ -218,16 +236,31 @@ struct DrawingDocumentView: View {
                 var ctx = context
                 ctx.scaleBy(x: zoom, y: zoom)
                 if pages.indices.contains(i) {
-                    for s in pages[i].strokes { Self.draw(stroke: s, in: ctx) }
+                    for (idx, s) in pages[i].strokes.enumerated() {
+                        if lassoPage == i, strokeSel.contains(idx) { Self.drawHalo(stroke: s, in: ctx) }
+                        Self.draw(stroke: s, in: ctx)
+                    }
                 }
                 if i == focusedPage, let s = current { Self.draw(stroke: s, in: ctx) }
+                if lassoPage == i, !strokeSel.isEmpty, let box = selectionBox(page: i) {
+                    ctx.stroke(Path(roundedRect: box.insetBy(dx: -6, dy: -6), cornerRadius: 6),
+                               with: .color(.accentColor),
+                               style: StrokeStyle(lineWidth: 1 / zoom, dash: [5 / zoom, 4 / zoom]))
+                }
+                if i == focusedPage, tool == .lasso, lassoPoints.count > 1 {
+                    var lp = Path()
+                    lp.move(to: lassoPoints[0])
+                    for p in lassoPoints.dropFirst() { lp.addLine(to: p) }
+                    ctx.stroke(lp, with: .color(.accentColor.opacity(0.8)),
+                               style: StrokeStyle(lineWidth: 1 / zoom, dash: [6 / zoom, 4 / zoom]))
+                }
             }
             .frame(width: pageWidth * zoom, height: h * zoom)
             .allowsHitTesting(tool != .select)
             .onContinuousHover(coordinateSpace: .local) { phase in
                 switch phase {
                 case .active(let loc):
-                    guard optionDown, !isPressing else { return }
+                    guard optionDown, !isPressing, tool.isDrawing else { return }
                     focusedPage = i
                     let p = clamp(CGPoint(x: loc.x / zoom, y: loc.y / zoom), height: h)
                     if tool == .eraser { eraseAt(p, page: i); return }
@@ -246,14 +279,20 @@ struct DrawingDocumentView: View {
                         isPressing = true
                         focusedPage = i
                         let p = clamp(CGPoint(x: value.location.x / zoom, y: value.location.y / zoom), height: h)
+                        if tool == .lasso { lassoChanged(p, page: i); return }
                         if tool == .eraser { eraseAt(p, page: i); return }
-                        if current == nil {
-                            current = DrawStroke(points: [p], color: activeColor, width: activeWidth)
-                        } else {
-                            current?.points.append(p)
+                        if tool == .pen || tool == .highlighter {
+                            if current == nil {
+                                current = DrawStroke(points: [p], color: activeColor, width: activeWidth)
+                            } else {
+                                current?.points.append(p)
+                            }
                         }
                     }
-                    .onEnded { _ in finalizeStroke(on: i); isPressing = false }
+                    .onEnded { _ in
+                        if tool == .lasso { lassoEnded(page: i) } else { finalizeStroke(on: i) }
+                        isPressing = false
+                    }
             )
         }
         .frame(width: pageWidth * zoom, height: h * zoom)
@@ -432,6 +471,11 @@ struct DrawingDocumentView: View {
 
     private var hintText: String {
         if tool == .select { return "Select: drag to move · corner to resize" }
+        if tool == .lasso {
+            return strokeSel.isEmpty
+                ? "Lasso: circle strokes to select"
+                : "Selected \(strokeSel.count) — drag inside to move · ⌫ delete · pick a color then recolor"
+        }
         if optionDown { return "Drawing (⌥)" }
         return "Drag, or hold ⌥ + move, to draw"
     }
@@ -466,6 +510,12 @@ struct DrawingDocumentView: View {
             if (selectedImage != nil || selectedVideo != nil) && tool == .select {
                 Button(role: .destructive) { deleteSelected() } label: { Image(systemName: "trash") }
                     .help("Delete selected item")
+            }
+            if tool == .lasso, lassoPage != nil, !strokeSel.isEmpty {
+                Button { recolorSelection() } label: { Image(systemName: "paintbrush") }
+                    .help("Recolor selection to the current color")
+                Button(role: .destructive) { deleteSelected() } label: { Image(systemName: "trash") }
+                    .help("Delete selection (⌫)")
             }
             if importing { ProgressView().controlSize(.small) }
 
@@ -503,7 +553,10 @@ struct DrawingDocumentView: View {
     }
 
     private func finalizeStroke(on i: Int) {
-        if tool != .eraser, let s = current, pages.indices.contains(i) {
+        if tool != .eraser, var s = current, pages.indices.contains(i) {
+            if tool == .pen, snapShapes, let snapped = ShapeRecognizer.recognize(s.points) {
+                s.points = snapped
+            }
             pages[i].strokes.append(s)
             scheduleSave()
         }
@@ -513,12 +566,14 @@ struct DrawingDocumentView: View {
     private func undo() {
         guard pages.indices.contains(focusedPage), !pages[focusedPage].strokes.isEmpty else { return }
         pages[focusedPage].strokes.removeLast()
+        strokeSel = []; lassoPage = nil
         scheduleSave()
     }
 
     private func clearPage() {
         guard pages.indices.contains(focusedPage), !pages[focusedPage].strokes.isEmpty else { return }
         pages[focusedPage].strokes.removeAll()
+        strokeSel = []; lassoPage = nil
         scheduleSave()
     }
 
@@ -553,7 +608,105 @@ struct DrawingDocumentView: View {
             selectedVideo = nil
             playingVideo = nil
             scheduleSave()
+            return
         }
+        if let pg = lassoPage, !strokeSel.isEmpty, pages.indices.contains(pg) {
+            for idx in strokeSel.sorted(by: >) where pages[pg].strokes.indices.contains(idx) {
+                pages[pg].strokes.remove(at: idx)
+            }
+            strokeSel = []; lassoPage = nil
+            scheduleSave()
+        }
+    }
+
+    // MARK: - Lasso selection (ink strokes)
+
+    private func lassoChanged(_ p: CGPoint, page i: Int) {
+        if lassoMode == nil {
+            // Drag starting inside an existing selection's box = move it.
+            if lassoPage == i, !strokeSel.isEmpty,
+               let box = selectionBox(page: i), box.insetBy(dx: -8, dy: -8).contains(p) {
+                lassoMode = .move
+                moveStart = p
+                moveSnapshot = Dictionary(uniqueKeysWithValues: strokeSel.compactMap { idx in
+                    pages[i].strokes.indices.contains(idx) ? (idx, pages[i].strokes[idx].points) : nil
+                })
+            } else {
+                lassoMode = .draw
+                lassoPage = i
+                strokeSel = []
+                lassoPoints = [p]
+            }
+            return
+        }
+        switch lassoMode! {
+        case .draw:
+            lassoPoints.append(p)
+        case .move:
+            guard let start = moveStart, let snap = moveSnapshot else { return }
+            let dx = p.x - start.x, dy = p.y - start.y
+            for (idx, orig) in snap where pages[i].strokes.indices.contains(idx) {
+                pages[i].strokes[idx].points = orig.map { CGPoint(x: $0.x + dx, y: $0.y + dy) }
+            }
+        }
+    }
+
+    private func lassoEnded(page i: Int) {
+        defer { lassoMode = nil; moveStart = nil; moveSnapshot = nil }
+        switch lassoMode {
+        case .move:
+            scheduleSave()
+        case .draw:
+            let poly = lassoPoints
+            lassoPoints = []
+            guard poly.count >= 3, pages.indices.contains(i) else { strokeSel = []; lassoPage = nil; return }
+            var sel = Set<Int>()
+            for (idx, s) in pages[i].strokes.enumerated() where !s.points.isEmpty {
+                let inside = s.points.filter { pointInPolygon($0, poly) }.count
+                if inside * 2 >= s.points.count { sel.insert(idx) }   // majority inside
+            }
+            strokeSel = sel
+            lassoPage = sel.isEmpty ? nil : i
+        case .none:
+            break
+        }
+    }
+
+    private func recolorSelection() {
+        guard let pg = lassoPage, !strokeSel.isEmpty, pages.indices.contains(pg) else { return }
+        for idx in strokeSel where pages[pg].strokes.indices.contains(idx) {
+            pages[pg].strokes[idx].color = inkColor.color
+        }
+        scheduleSave()
+    }
+
+    private func selectionBox(page i: Int) -> CGRect? {
+        guard pages.indices.contains(i) else { return nil }
+        var minX = CGFloat.greatestFiniteMagnitude, minY = minX
+        var maxX = -CGFloat.greatestFiniteMagnitude, maxY = maxX
+        var any = false
+        for idx in strokeSel where pages[i].strokes.indices.contains(idx) {
+            for p in pages[i].strokes[idx].points {
+                any = true
+                minX = min(minX, p.x); minY = min(minY, p.y)
+                maxX = max(maxX, p.x); maxY = max(maxY, p.y)
+            }
+        }
+        return any ? CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY) : nil
+    }
+
+    private func pointInPolygon(_ p: CGPoint, _ poly: [CGPoint]) -> Bool {
+        var inside = false
+        var j = poly.count - 1
+        for i in 0..<poly.count {
+            let a = poly[i], b = poly[j]
+            if (a.y > p.y) != (b.y > p.y),
+               p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x {
+                inside.toggle()
+            }
+            j = i
+        }
+        return inside
     }
 
     // MARK: - Insert image / PDF
@@ -765,10 +918,34 @@ struct DrawingDocumentView: View {
             }
             return
         }
-        var path = Path()
-        path.move(to: s.points[0])
-        for p in s.points.dropFirst() { path.addLine(to: p) }
-        ctx.stroke(path, with: .color(s.color),
+        ctx.stroke(smoothedPath(s.points), with: .color(s.color),
                    style: StrokeStyle(lineWidth: s.width, lineCap: .round, lineJoin: .round))
+    }
+
+    /// Accent halo behind a lasso-selected stroke.
+    static func drawHalo(stroke s: DrawStroke, in ctx: GraphicsContext) {
+        guard s.points.count > 1 else { return }
+        ctx.stroke(smoothedPath(s.points), with: .color(.accentColor.opacity(0.35)),
+                   style: StrokeStyle(lineWidth: s.width + 6, lineCap: .round, lineJoin: .round))
+    }
+
+    /// Quadratic-Bézier smoothing through segment midpoints — turns the raw
+    /// polyline into smooth ink. Stored points are untouched (still re-editable
+    /// / erasable / lasso-selectable); this is render-only.
+    static func smoothedPath(_ pts: [CGPoint]) -> Path {
+        var path = Path()
+        guard let first = pts.first else { return path }
+        path.move(to: first)
+        if pts.count == 2 { path.addLine(to: pts[1]); return path }
+        path.addLine(to: midpoint(pts[0], pts[1]))
+        for k in 1..<(pts.count - 1) {
+            path.addQuadCurve(to: midpoint(pts[k], pts[k + 1]), control: pts[k])
+        }
+        path.addLine(to: pts[pts.count - 1])
+        return path
+    }
+
+    private static func midpoint(_ a: CGPoint, _ b: CGPoint) -> CGPoint {
+        CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2)
     }
 }
