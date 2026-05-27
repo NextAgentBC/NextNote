@@ -50,7 +50,7 @@ First launch: pick (or accept defaults for) three folders — Notes, Media, Eboo
 - **Reading time.** Status bar shows estimated reading time (200 wpm) + unsaved-changes dot.
 - **Ebooks.** `.epub` reader inline: TOC, page turn (click edge / arrows / space), highlights, fonts, themes. Auto-scanned from the Ebooks root.
 - **Media.** Music and video auto-scanned from the Media root. Click a track → `AmbientPlayer` starts; click a video → inline `MediaPlayerView`.
-- **Drawing notes.** Handwriting / sketch notes (`.nndraw`) stored as re-editable JSON in the vault — ink strokes across multiple pages, each with an optional full-page background (an imported PDF page render or a pasted screenshot) plus free-floating placed images **and embedded YouTube videos** (thumbnail cards you play in place, move, and resize). Reopen and keep editing the raw strokes anytime.
+- **Drawing notes.** Handwriting / sketch notes (`.nndraw`) stored as re-editable JSON in the vault — ink strokes across multiple pages, each with an optional full-page background (an imported PDF page render or a pasted screenshot) plus free-floating placed images **and embedded YouTube videos** (thumbnail cards you play in place, move, and resize). Lasso tool to multi-select strokes (move / delete / recolor), optional **shape recognition** (rough line / box / circle / triangle → clean geometry), and smoothed ink rendering. Reopen and keep editing the raw strokes anytime.
 - **PDF.** Inline PDF reader with outline TOC and page navigation; markup pages and send a page into a drawing note for annotation.
 - **AI.** Polish / summarize / translate / grammar / continue writing. Swap providers in Settings — MLX on-device, remote OpenAI-compatible (Ollama, vLLM, LM Studio, any HTTP endpoint), or Google Gemini (free tier with automatic key rotation).
 - **YouTube.** Embed a video by pasting its link — on its own line in a note (inline player in preview) or onto a drawing page (a play-in-place card). Separately, the downloader takes a URL → `yt-dlp` saves it to the Media folder (mp3 / mp4; needs `yt-dlp`, and `ffmpeg` unlocks mp3 + ≥1080p video).
@@ -122,7 +122,7 @@ Apple platform frameworks only beyond those.
 
 ## Status
 
-v0.5.0 — signed & notarized `.dmg` on the [Releases page](https://github.com/NextAgentBC/NextNote/releases/latest). Features listed above are working. Test target not added yet — high-value candidates are in [TUTORIAL.md](TUTORIAL.md#12-contributing).
+v0.6.0 — signed & notarized `.dmg` on the [Releases page](https://github.com/NextAgentBC/NextNote/releases/latest). Features listed above are working. Test target not added yet — high-value candidates are in [TUTORIAL.md](TUTORIAL.md#12-contributing).
 
 ## License
 

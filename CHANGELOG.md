@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.0 — 2026-05-26
+
+### Drawing — lasso, shape recognition, smoothed ink
+
+- **Lasso tool** (toolbar's 5th tool). Circle a group of strokes to select them, then **drag inside to move**, **⌫ or trash to delete**, or **pick a color and click the paintbrush to recolor** the whole selection. Selection uses point-in-polygon — a stroke is selected when the majority of its points fall inside your loop.
+- **Shape recognition** (toolbar toggle, off by default). With "snap shapes" on, pen strokes that clearly resemble a **line / axis-aligned rectangle / ellipse / triangle** get tidied into clean geometry as you finish the stroke. Thresholds are conservative: if the shape isn't a confident match, the raw stroke is kept so the recognizer never fights your sketch. Snapped shapes are still ordinary editable / erasable / lasso-selectable strokes.
+- **Smoothed ink.** Strokes render as quadratic Bézier curves through segment midpoints instead of raw polylines — visibly smoother handwriting and diagrams. Render-only: the stored point geometry is unchanged, so strokes remain re-editable and erasable.
+
 ## 0.5.0 — 2026-05-23
 
 ### YouTube video embedding — notes + drawings
