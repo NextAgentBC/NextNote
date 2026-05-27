@@ -4,9 +4,8 @@ import SwiftUI
 import AppKit
 
 /// Hosts the AI chat terminal in a standalone NSWindow. Mirrors the pattern
-/// used by `DrawingWindowController` and `PreviewWindowController` —
-/// singleton, freely resizable, can be screen-shared independently of the
-/// main editor window.
+/// used by `PreviewWindowController` — singleton, freely resizable, can be
+/// screen-shared independently of the main editor window.
 @MainActor
 final class ChatTerminalWindowController {
     static let shared = ChatTerminalWindowController()

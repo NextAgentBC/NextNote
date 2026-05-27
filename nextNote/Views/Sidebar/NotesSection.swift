@@ -12,15 +12,10 @@ struct NotesSection: View {
                 Image(systemName: "folder")
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(.secondary)
-                Text("Files")
+                Text(vault.root?.lastPathComponent ?? "Notes")
                     .font(.caption.bold())
                     .foregroundStyle(.secondary)
-                if let name = vault.root?.lastPathComponent {
-                    Text(name)
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
-                }
+                    .lineLimit(1)
                 Spacer()
             }
             .padding(.horizontal, 12)

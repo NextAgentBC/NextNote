@@ -21,9 +21,6 @@ extension ContentView {
                 MarkdownToolbarView(
                     onInsert: { text, offset in
                         insertSnippet(text: text, cursorOffset: offset)
-                    },
-                    onDrawing: {
-                        openDrawingWindow()
                     }
                 )
             }
@@ -69,27 +66,4 @@ extension ContentView {
         return vault.root?.lastPathComponent ?? ""
     }
 
-    #if os(macOS)
-    func openDrawingWindow() {
-        let tab = appState.activeTab
-        let url: URL? = {
-            guard let tab,
-                  preferences.vaultMode,
-                  let rel = appState.vaultPath(forTabId: tab.id) else { return nil }
-            return vault.url(for: rel)
-        }()
-        let baseName: String = {
-            if let u = url { return u.deletingPathExtension().lastPathComponent }
-            return tab?.document.title.replacingOccurrences(of: "/", with: "-") ?? "Untitled"
-        }()
-        DrawingWindowController.shared.show(
-            noteURL: url,
-            baseName: baseName,
-            onSave: { [appState] relPath in
-                let snippet = "![drawing](\(relPath))"
-                appState.pendingSnippet = SnippetInsert(text: snippet, cursorOffset: snippet.count)
-            }
-        )
-    }
-    #endif
 }

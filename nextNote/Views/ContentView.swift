@@ -222,8 +222,6 @@ struct ContentView: View {
             }
         }
         #endif
-        // Drawing window opens via DrawingWindowController in EditorAreaView's
-        // toolbar action — no sheet wiring needed here.
         // PDF export trigger — File > Export > PDF…
         #if os(macOS)
         .onChange(of: appState.triggerExportPDF) { _, triggered in

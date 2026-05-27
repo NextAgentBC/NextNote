@@ -4,7 +4,6 @@ import SwiftUI
 /// Shown when file type is Markdown.
 struct MarkdownToolbarView: View {
     var onInsert: (String, Int) -> Void  // (text to insert, cursor offset from start)
-    var onDrawing: () -> Void = {}        // triggered by the Drawing button
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -92,9 +91,6 @@ struct MarkdownToolbarView: View {
                 }
                 toolbarAction(icon: "photo", hint: "Image") {
                     insert("![alt text](image_url)", 2)
-                }
-                toolbarAction(icon: "pencil.tip.crop.circle", hint: "Drawing") {
-                    onDrawing()
                 }
 
                 Divider().frame(height: 20)
