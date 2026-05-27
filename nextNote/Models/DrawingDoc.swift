@@ -122,6 +122,16 @@ struct PlacedVideo: Codable {
     var h: Double
 }
 
+/// In-memory representation of a single ink stroke on a drawing page.
+/// `Color` isn't directly Codable, so persistence goes through
+/// `CodableStroke` below.
+struct DrawStroke: Identifiable, Equatable {
+    let id = UUID()
+    var points: [CGPoint]
+    var color: Color
+    var width: CGFloat
+}
+
 /// Codable mirror of `DrawStroke` (whose `Color` isn't directly Codable).
 /// Colour is stored as sRGB components so highlighter alpha round-trips.
 struct CodableStroke: Codable {

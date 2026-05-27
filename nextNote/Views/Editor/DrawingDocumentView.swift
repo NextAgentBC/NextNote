@@ -9,6 +9,13 @@ import UniformTypeIdentifiers
 /// Each page can carry a full-page background (imported PDF page) and free
 /// placed images (pasted screenshots — movable/resizable in Select mode),
 /// both drawn under the ink. Press-drag draws; holding ⌥ + moving also draws.
+///
+/// This file holds the view shell (state, body, toolbar, page rendering,
+/// bottom bar, zoom, modifier monitor). The four `+` siblings hold:
+///   - `+Editing.swift`     — ink mutation + lasso selection
+///   - `+Media.swift`       — paste / PDF import / YouTube embed / md sync
+///   - `+Persistence.swift` — load / debounced autosave
+///   - `+Rendering.swift`   — static stroke / smoothing helpers
 struct DrawingDocumentView: View {
     let fileURL: URL
     /// When this drawing is the "Draw" layer of a markdown note, its rendered
@@ -45,57 +52,62 @@ struct DrawingDocumentView: View {
         }
     }
 
-    private struct VMPage {
+    // Nested helper types — kept internal (not `private`) so the `+Editing` /
+    // `+Persistence` / `+Media` extensions in sibling files can name them.
+    struct VMPage {
         var strokes: [DrawStroke]
         var background: String?
         var images: [PlacedImage]
         var videos: [PlacedVideo]
     }
-    private struct ImgSel: Equatable { var page: Int; var index: Int }
-    private struct VidSel: Equatable { var page: Int; var index: Int }
-    private enum LassoMode { case draw, move }
+    struct ImgSel: Equatable { var page: Int; var index: Int }
+    struct VidSel: Equatable { var page: Int; var index: Int }
+    enum LassoMode { case draw, move }
 
     private static let minZoom: CGFloat = 0.25
     private static let maxZoom: CGFloat = 4.0
 
-    @State private var pages: [VMPage] = [VMPage(strokes: [], background: nil, images: [], videos: [])]
-    @State private var bgCache: [Int: NSImage] = [:]
-    @State private var imgCache: [String: NSImage] = [:]
-    @State private var current: DrawStroke?
-    @State private var focusedPage: Int = 0
-    @State private var pageWidth: CGFloat = CGFloat(DrawingDoc.letterWidth)
-    @State private var pageHeight: CGFloat = CGFloat(DrawingDoc.letterHeight)
-    @State private var tool: Tool = .pen
-    @State private var inkColor: InkColor = .black
-    @State private var penWidth: CGFloat = 3
-    @State private var highlighterWidth: CGFloat = 16
-    @State private var zoom: CGFloat = 1.0
-    @State private var containerWidth: CGFloat = 0
-    @State private var scrollTopToken = 0
-    @State private var didInitialFit = false
-    @State private var importing = false
-    @State private var loaded = false
-    @State private var saveError: String?
-    @State private var saveTask: Task<Void, Never>?
-    @State private var optionDown = false
-    @State private var isPressing = false
-    @State private var selectedImage: ImgSel?
-    @State private var imgBaseline: CGPoint?
-    @State private var selectedVideo: VidSel?
-    @State private var vidBaseline: CGPoint?
-    @State private var playingVideo: VidSel?
-    @State private var thumbCache: [String: NSImage] = [:]
+    // @State declared without `private` so cross-file extensions can mutate.
+    // Encapsulation is at the type level — nothing outside this view touches
+    // these.
+    @State var pages: [VMPage] = [VMPage(strokes: [], background: nil, images: [], videos: [])]
+    @State var bgCache: [Int: NSImage] = [:]
+    @State var imgCache: [String: NSImage] = [:]
+    @State var current: DrawStroke?
+    @State var focusedPage: Int = 0
+    @State var pageWidth: CGFloat = CGFloat(DrawingDoc.letterWidth)
+    @State var pageHeight: CGFloat = CGFloat(DrawingDoc.letterHeight)
+    @State var tool: Tool = .pen
+    @State var inkColor: InkColor = .black
+    @State var penWidth: CGFloat = 3
+    @State var highlighterWidth: CGFloat = 16
+    @State var zoom: CGFloat = 1.0
+    @State var containerWidth: CGFloat = 0
+    @State var scrollTopToken = 0
+    @State var didInitialFit = false
+    @State var importing = false
+    @State var loaded = false
+    @State var saveError: String?
+    @State var saveTask: Task<Void, Never>?
+    @State var optionDown = false
+    @State var isPressing = false
+    @State var selectedImage: ImgSel?
+    @State var imgBaseline: CGPoint?
+    @State var selectedVideo: VidSel?
+    @State var vidBaseline: CGPoint?
+    @State var playingVideo: VidSel?
+    @State var thumbCache: [String: NSImage] = [:]
     // Lasso selection of ink strokes (operates on the focused page).
-    @State private var lassoPoints: [CGPoint] = []
-    @State private var strokeSel: Set<Int> = []
-    @State private var lassoPage: Int?
-    @State private var lassoMode: LassoMode?
-    @State private var moveStart: CGPoint?
-    @State private var moveSnapshot: [Int: [CGPoint]]?
+    @State var lassoPoints: [CGPoint] = []
+    @State var strokeSel: Set<Int> = []
+    @State var lassoPage: Int?
+    @State var lassoMode: LassoMode?
+    @State var moveStart: CGPoint?
+    @State var moveSnapshot: [Int: [CGPoint]]?
     // Shape-recognition toggle (snaps pen strokes to line/rect/ellipse/triangle).
-    @State private var snapShapes = false
+    @State var snapShapes = false
     #if os(macOS)
-    @State private var flagsMonitor: Any?
+    @State var flagsMonitor: Any?
     #endif
 
     private var activeColor: Color {
@@ -546,351 +558,6 @@ struct DrawingDocumentView: View {
         fitWidth()
     }
 
-    // MARK: - Ink editing
-
-    private func clamp(_ p: CGPoint, height: CGFloat) -> CGPoint {
-        CGPoint(x: min(max(p.x, 0), pageWidth), y: min(max(p.y, 0), height))
-    }
-
-    private func finalizeStroke(on i: Int) {
-        if tool != .eraser, var s = current, pages.indices.contains(i) {
-            if tool == .pen, snapShapes, let snapped = ShapeRecognizer.recognize(s.points) {
-                s.points = snapped
-            }
-            pages[i].strokes.append(s)
-            scheduleSave()
-        }
-        current = nil
-    }
-
-    private func undo() {
-        guard pages.indices.contains(focusedPage), !pages[focusedPage].strokes.isEmpty else { return }
-        pages[focusedPage].strokes.removeLast()
-        strokeSel = []; lassoPage = nil
-        scheduleSave()
-    }
-
-    private func clearPage() {
-        guard pages.indices.contains(focusedPage), !pages[focusedPage].strokes.isEmpty else { return }
-        pages[focusedPage].strokes.removeAll()
-        strokeSel = []; lassoPage = nil
-        scheduleSave()
-    }
-
-    private func eraseAt(_ p: CGPoint, page i: Int) {
-        guard pages.indices.contains(i) else { return }
-        let radius: CGFloat = 14
-        let before = pages[i].strokes.count
-        pages[i].strokes.removeAll { stroke in
-            stroke.points.contains { hypot($0.x - p.x, $0.y - p.y) <= max(radius, stroke.width) }
-        }
-        if pages[i].strokes.count != before { scheduleSave() }
-    }
-
-    private func addPage() {
-        current = nil
-        pages.append(VMPage(strokes: [], background: nil, images: [], videos: []))
-        focusedPage = pages.count - 1
-        scheduleSave()
-    }
-
-    private func deleteSelected() {
-        if let sel = selectedImage, pages.indices.contains(sel.page),
-           pages[sel.page].images.indices.contains(sel.index) {
-            pages[sel.page].images.remove(at: sel.index)
-            selectedImage = nil
-            scheduleSave()
-            return
-        }
-        if let sel = selectedVideo, pages.indices.contains(sel.page),
-           pages[sel.page].videos.indices.contains(sel.index) {
-            pages[sel.page].videos.remove(at: sel.index)
-            selectedVideo = nil
-            playingVideo = nil
-            scheduleSave()
-            return
-        }
-        if let pg = lassoPage, !strokeSel.isEmpty, pages.indices.contains(pg) {
-            for idx in strokeSel.sorted(by: >) where pages[pg].strokes.indices.contains(idx) {
-                pages[pg].strokes.remove(at: idx)
-            }
-            strokeSel = []; lassoPage = nil
-            scheduleSave()
-        }
-    }
-
-    // MARK: - Lasso selection (ink strokes)
-
-    private func lassoChanged(_ p: CGPoint, page i: Int) {
-        if lassoMode == nil {
-            // Drag starting inside an existing selection's box = move it.
-            if lassoPage == i, !strokeSel.isEmpty,
-               let box = selectionBox(page: i), box.insetBy(dx: -8, dy: -8).contains(p) {
-                lassoMode = .move
-                moveStart = p
-                moveSnapshot = Dictionary(uniqueKeysWithValues: strokeSel.compactMap { idx in
-                    pages[i].strokes.indices.contains(idx) ? (idx, pages[i].strokes[idx].points) : nil
-                })
-            } else {
-                lassoMode = .draw
-                lassoPage = i
-                strokeSel = []
-                lassoPoints = [p]
-            }
-            return
-        }
-        switch lassoMode! {
-        case .draw:
-            lassoPoints.append(p)
-        case .move:
-            guard let start = moveStart, let snap = moveSnapshot else { return }
-            let dx = p.x - start.x, dy = p.y - start.y
-            for (idx, orig) in snap where pages[i].strokes.indices.contains(idx) {
-                pages[i].strokes[idx].points = orig.map { CGPoint(x: $0.x + dx, y: $0.y + dy) }
-            }
-        }
-    }
-
-    private func lassoEnded(page i: Int) {
-        defer { lassoMode = nil; moveStart = nil; moveSnapshot = nil }
-        switch lassoMode {
-        case .move:
-            scheduleSave()
-        case .draw:
-            let poly = lassoPoints
-            lassoPoints = []
-            guard poly.count >= 3, pages.indices.contains(i) else { strokeSel = []; lassoPage = nil; return }
-            var sel = Set<Int>()
-            for (idx, s) in pages[i].strokes.enumerated() where !s.points.isEmpty {
-                let inside = s.points.filter { pointInPolygon($0, poly) }.count
-                if inside * 2 >= s.points.count { sel.insert(idx) }   // majority inside
-            }
-            strokeSel = sel
-            lassoPage = sel.isEmpty ? nil : i
-        case .none:
-            break
-        }
-    }
-
-    private func recolorSelection() {
-        guard let pg = lassoPage, !strokeSel.isEmpty, pages.indices.contains(pg) else { return }
-        for idx in strokeSel where pages[pg].strokes.indices.contains(idx) {
-            pages[pg].strokes[idx].color = inkColor.color
-        }
-        scheduleSave()
-    }
-
-    private func selectionBox(page i: Int) -> CGRect? {
-        guard pages.indices.contains(i) else { return nil }
-        var minX = CGFloat.greatestFiniteMagnitude, minY = minX
-        var maxX = -CGFloat.greatestFiniteMagnitude, maxY = maxX
-        var any = false
-        for idx in strokeSel where pages[i].strokes.indices.contains(idx) {
-            for p in pages[i].strokes[idx].points {
-                any = true
-                minX = min(minX, p.x); minY = min(minY, p.y)
-                maxX = max(maxX, p.x); maxY = max(maxY, p.y)
-            }
-        }
-        return any ? CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY) : nil
-    }
-
-    private func pointInPolygon(_ p: CGPoint, _ poly: [CGPoint]) -> Bool {
-        var inside = false
-        var j = poly.count - 1
-        for i in 0..<poly.count {
-            let a = poly[i], b = poly[j]
-            if (a.y > p.y) != (b.y > p.y),
-               p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x {
-                inside.toggle()
-            }
-            j = i
-        }
-        return inside
-    }
-
-    // MARK: - Insert image / PDF
-
-    #if os(macOS)
-    private func paste() {
-        guard let img = DrawingAssets.clipboardImage() else { saveError = "No image in the clipboard"; return }
-        guard let rel = DrawingAssets.savePNG(img, for: fileURL, prefix: "paste") else {
-            saveError = "Couldn't save pasted image"; return
-        }
-        guard pages.indices.contains(focusedPage) else { return }
-        // Place on the CURRENT page, centered, aspect-fit to ~60% width.
-        let nat = img.size
-        let maxW = pageWidth * 0.6
-        let scale = (nat.width > maxW && nat.width > 0) ? maxW / nat.width : 1
-        let w = max(60, nat.width * scale)
-        let h = max(60, nat.height * scale)
-        let x = (pageWidth - w) / 2
-        let y = (pageHeight - h) / 2
-        imgCache[rel] = img
-        pages[focusedPage].images.append(PlacedImage(path: rel, x: x, y: y, w: w, h: h))
-        tool = .select
-        selectedImage = ImgSel(page: focusedPage, index: pages[focusedPage].images.count - 1)
-        saveError = nil
-        scheduleSave()
-    }
-
-    private func importPDF() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.pdf]
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-        panel.prompt = "Import"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        importing = true
-        Task {
-            let images = await Task.detached(priority: .userInitiated) { DrawingAssets.renderPDF(url) }.value
-            await MainActor.run {
-                let firstNew = pages.count
-                for img in images {
-                    if let rel = DrawingAssets.savePNG(img, for: fileURL, prefix: "pdf") {
-                        pages.append(VMPage(strokes: [], background: rel, images: [], videos: []))
-                        bgCache[pages.count - 1] = img
-                    }
-                }
-                if !images.isEmpty { focusedPage = firstNew } else { saveError = "Couldn't read that PDF" }
-                importing = false
-                scheduleSave()
-            }
-        }
-    }
-    /// Render the associated markdown note to a PDF (same pipeline as the
-    /// preview), rasterize its pages, and set them as page backgrounds to
-    /// annotate over. Overwrites backgrounds but keeps existing ink per page.
-    private func syncFromMarkdown() {
-        guard let md = markdownSource,
-              !md.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            saveError = "Note has no text to render"; return
-        }
-        importing = true
-        let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("nndraw-mdbg-\(UUID().uuidString).pdf")
-        PDFExporter.export(markdown: md, baseURL: markdownBaseURL, destination: tmp) { result in
-            Task { @MainActor in
-                importing = false
-                switch result {
-                case .success(let url):
-                    let images = DrawingAssets.renderPDF(url, maxPages: 60)
-                    try? FileManager.default.removeItem(at: url)
-                    guard !images.isEmpty else { saveError = "Couldn't render the note"; return }
-                    for (i, img) in images.enumerated() {
-                        if i >= pages.count {
-                            pages.append(VMPage(strokes: [], background: nil, images: [], videos: []))
-                        }
-                        if let rel = DrawingAssets.savePNG(img, for: fileURL, prefix: "mdbg") {
-                            pages[i].background = rel
-                            bgCache[i] = img
-                        }
-                    }
-                    saveError = nil
-                    scheduleSave()
-                case .failure(let e):
-                    saveError = "Render failed: \(e.localizedDescription)"
-                }
-            }
-        }
-    }
-    private func embedYouTube() {
-        let pb = NSPasteboard.general.string(forType: .string) ?? ""
-        let prefill = MarkdownEmbeds.extractYouTubeID(from: pb) != nil ? pb : ""
-        let alert = NSAlert()
-        alert.messageText = "Embed YouTube video"
-        alert.informativeText = "Paste a YouTube link (youtube.com/watch?v=… or youtu.be/…)."
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
-        field.placeholderString = "https://youtu.be/…"
-        field.stringValue = prefill
-        alert.accessoryView = field
-        alert.addButton(withTitle: "Embed")
-        alert.addButton(withTitle: "Cancel")
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        guard let id = MarkdownEmbeds.extractYouTubeID(from: field.stringValue) else {
-            saveError = "That doesn't look like a YouTube link"; return
-        }
-        guard pages.indices.contains(focusedPage) else { return }
-        let w = pageWidth * 0.6
-        let h = w * 9.0 / 16.0
-        let x = (pageWidth - w) / 2
-        let y = (pageHeight - h) / 2
-        pages[focusedPage].videos.append(PlacedVideo(youtubeID: id, x: x, y: y, w: w, h: h))
-        loadThumb(id)
-        tool = .select
-        selectedImage = nil
-        selectedVideo = VidSel(page: focusedPage, index: pages[focusedPage].videos.count - 1)
-        saveError = nil
-        scheduleSave()
-    }
-
-    private func loadThumb(_ id: String) {
-        guard thumbCache[id] == nil,
-              let url = URL(string: "https://img.youtube.com/vi/\(id)/hqdefault.jpg") else { return }
-        Task {
-            if let (data, _) = try? await URLSession.shared.data(from: url),
-               let img = NSImage(data: data) {
-                await MainActor.run { thumbCache[id] = img }
-            }
-        }
-    }
-    #else
-    private func paste() {}
-    private func importPDF() {}
-    private func syncFromMarkdown() {}
-    private func embedYouTube() {}
-    private func loadThumb(_ id: String) {}
-    #endif
-
-    // MARK: - Persistence
-
-    private func loadIfNeeded() {
-        guard !loaded else { return }
-        loaded = true
-        if let doc = DrawingIO.load(url: fileURL) {
-            pageWidth = CGFloat(doc.pageWidth)
-            pageHeight = CGFloat(doc.pageHeight)
-            pages = doc.pages.map { VMPage(strokes: $0.strokes.map { $0.drawStroke }, background: $0.background, images: $0.images, videos: $0.videos) }
-            if pages.isEmpty { pages = [VMPage(strokes: [], background: nil, images: [], videos: [])] }
-            #if os(macOS)
-            for (idx, pg) in pages.enumerated() {
-                if let bg = pg.background, let im = DrawingAssets.loadImage(bg, for: fileURL) { bgCache[idx] = im }
-                for pimg in pg.images where imgCache[pimg.path] == nil {
-                    if let im = DrawingAssets.loadImage(pimg.path, for: fileURL) { imgCache[pimg.path] = im }
-                }
-                for pv in pg.videos { loadThumb(pv.youtubeID) }
-            }
-            #endif
-        }
-        focusedPage = min(focusedPage, pages.count - 1)
-    }
-
-    private func scheduleSave() {
-        saveTask?.cancel()
-        saveTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(500))
-            guard !Task.isCancelled else { return }
-            saveNow()
-        }
-    }
-
-    private func saveNow() {
-        let doc = DrawingDoc(
-            pageWidth: Double(pageWidth),
-            pageHeight: Double(pageHeight),
-            pages: pages.map {
-                DrawPage(strokes: $0.strokes.map { CodableStroke(from: $0) },
-                         background: $0.background, images: $0.images, videos: $0.videos)
-            }
-        )
-        do {
-            try DrawingIO.save(url: fileURL, doc: doc)
-            saveError = nil
-        } catch {
-            saveError = "Save failed: \(error.localizedDescription)"
-        }
-    }
-
     // MARK: - Modifier key (hold ⌥ to draw)
 
     #if os(macOS)
@@ -907,45 +574,4 @@ struct DrawingDocumentView: View {
         if let m = flagsMonitor { NSEvent.removeMonitor(m); flagsMonitor = nil }
     }
     #endif
-
-    // MARK: - Rendering
-
-    static func draw(stroke s: DrawStroke, in ctx: GraphicsContext) {
-        guard s.points.count > 1 else {
-            if let p = s.points.first {
-                let rect = CGRect(x: p.x - s.width/2, y: p.y - s.width/2, width: s.width, height: s.width)
-                ctx.fill(Path(ellipseIn: rect), with: .color(s.color))
-            }
-            return
-        }
-        ctx.stroke(smoothedPath(s.points), with: .color(s.color),
-                   style: StrokeStyle(lineWidth: s.width, lineCap: .round, lineJoin: .round))
-    }
-
-    /// Accent halo behind a lasso-selected stroke.
-    static func drawHalo(stroke s: DrawStroke, in ctx: GraphicsContext) {
-        guard s.points.count > 1 else { return }
-        ctx.stroke(smoothedPath(s.points), with: .color(.accentColor.opacity(0.35)),
-                   style: StrokeStyle(lineWidth: s.width + 6, lineCap: .round, lineJoin: .round))
-    }
-
-    /// Quadratic-Bézier smoothing through segment midpoints — turns the raw
-    /// polyline into smooth ink. Stored points are untouched (still re-editable
-    /// / erasable / lasso-selectable); this is render-only.
-    static func smoothedPath(_ pts: [CGPoint]) -> Path {
-        var path = Path()
-        guard let first = pts.first else { return path }
-        path.move(to: first)
-        if pts.count == 2 { path.addLine(to: pts[1]); return path }
-        path.addLine(to: midpoint(pts[0], pts[1]))
-        for k in 1..<(pts.count - 1) {
-            path.addQuadCurve(to: midpoint(pts[k], pts[k + 1]), control: pts[k])
-        }
-        path.addLine(to: pts[pts.count - 1])
-        return path
-    }
-
-    private static func midpoint(_ a: CGPoint, _ b: CGPoint) -> CGPoint {
-        CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2)
-    }
 }

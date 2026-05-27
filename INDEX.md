@@ -14,6 +14,25 @@ This index is the first stop when:
 
 ## Structural changes (newest first)
 
+- **2026-05-26 — Round 2 optimization: god-file splits + shared helpers + bug fix.**
+  Split four large view/service files along their existing MARK boundaries so
+  each piece sits in its own file:
+    - `DrawingDocumentView.swift` (951 → 577) + `+Editing` / `+Media` / `+Persistence` / `+Rendering`
+    - `ChatTerminalView.swift` (700 → 422) + `+Commands` (/search,/meeting) / `+BlockActions`
+    - `LibraryReconciler.swift` (506 → 158) + `+Plan` / `+Apply`
+    - `PDFReaderView.swift` (549 → 266) + sibling `PDFReaderAnnotation.swift` / `PDFKitView.swift`
+  Tradeoff: `@State private var` widened to `@State var` so cross-file
+  extensions can see state — standard SwiftUI codebase practice; nothing
+  outside each view's own extensions reaches in.
+  New shared helpers: `Utilities/StringExtras.swift` (`nilIfEmpty`),
+  `Utilities/SecurityScope.swift` (`URL.withSecurityScope { }`),
+  `Services/EPUB/BookHashing.swift` (streamed SHA-256). EPUBImporter +
+  PDFImporter now share the hash + dropped `import CryptoKit`; the inline
+  `nilIfEmpty` extension that lived in PDFImporter is gone.
+  **Bug fix:** restored `struct DrawStroke` in `DrawingDoc.swift` — the
+  previous commit deleted `DrawingCanvasView.swift` along with the struct
+  the live drawing editor depends on; clean builds would have failed
+  without this.
 - **2026-05-26 — Sidebar dead-code purge + DrawingSheet retire + NotesSection trim.**
   Removed the orphaned Assets/Ebooks tray scaffolding (deleted 4 files, slimmed
   `LibrarySidebar.swift` 184 → 14 lines). Retired the floating `DrawingSheet` /
@@ -59,13 +78,13 @@ This index is the first stop when:
 - `Book.swift`, `BookHighlight.swift` — SwiftData `@Model` for ebooks + highlights.
 - `ChatBlock.swift`, `ChatMessage.swift` — per-note chat session types.
 - `DownloadJob.swift` — YouTube download job state.
-- `DrawingDoc.swift` — `.nndraw` Codable model: `DrawingDoc` / `DrawPage` / `PlacedImage` / `PlacedVideo` / `CodableStroke` (tolerant v1→v3 decode).
+- `DrawingDoc.swift` — `.nndraw` Codable model + in-memory ink types: `DrawingDoc` / `DrawPage` / `PlacedImage` / `PlacedVideo` / `DrawStroke` / `CodableStroke` (tolerant v1→v3 decode).
 - `FileCategory.swift`, `FileType.swift`, `MediaKind.swift` — file classification enums.
 - `FolderNode.swift` — generic folder/file tree node used by VaultTreeScanner + PinnedFoldersStore.
 - `Note.swift` — disk-backed note index (V2+ schema).
 - `PinnedFolder.swift` — pinned external folder model (id, name, bookmark, tree).
 - `SchemaVersions.swift` — SwiftData schema migration definitions (V1→V2 etc.).
-- `TextDocument.swift` — legacy V1 flat document model (kept for migration).
+- `TextDocument.swift` — `@Model` in-memory document buffer for every open `TabItem` (title + content + fileType). Started life as the V1 disk-persistence type; in V2+ the disk source-of-truth moved to files on disk + a `Note` index row, but this type is still the editor's working copy. 18 files depend on it — retire only with a tab-layer rewrite + SwiftData migration.
 - `Track.swift` — media track metadata.
 - `UserPreferences.swift` — `@AppStorage`-backed app preferences (vaultMode, theme, etc.).
 
@@ -82,7 +101,7 @@ This index is the first stop when:
 - `AmbientPlayer.swift`, `AmbientFolderBookmark.swift` — bottom-bar AmbientBar player + its folder bookmark.
 - `MediaLibrary.swift` (+`+Scan`, `+Tracks`, `+Playlists`, `+AmbientFolder`) — disk-backed media catalog, scans Media root, persists.
 - `MediaPlayback.swift`, `MediaScanner.swift`, `MediaTrackPersistence.swift`, `PlaylistPersistence.swift` — playback + scan + on-disk persistence helpers.
-- `LibraryAutoClean.swift`, `LibraryReconciler.swift`, `MediaCategorizer.swift`, `PlaylistSynth.swift`, `TidyMediaPrompt.swift`, `TrackTitleFormatter.swift` — library tidy + AI auto-categorize + title cleanup (uses `yt-dlp` for metadata).
+- `LibraryAutoClean.swift`, `LibraryReconciler.swift` (+`+Plan`, `+Apply`), `MediaCategorizer.swift`, `PlaylistSynth.swift`, `TidyMediaPrompt.swift`, `TrackTitleFormatter.swift` — library tidy + AI auto-categorize + title cleanup (uses `yt-dlp` for metadata). `LibraryReconciler` is a namespace enum: main file holds data shapes + leaf helpers, `+Plan` builds the audit (incl. AI merge proposal), `+Apply` executes it.
 
 ### Download (`Services/Download/`)
 - `YTDLPLocator.swift` — finds `yt-dlp` binary on the user's machine (Homebrew etc.).
@@ -91,6 +110,7 @@ This index is the first stop when:
 
 ### EPUB (`Services/EPUB/`)
 - `EPUBParser.swift`, `EPUBImporter.swift`, `BookLibrary.swift` — EPUB OPF/NCX parsing + library scanner.
+- `BookHashing.swift` — streamed SHA-256 helper shared by `EPUBImporter` and `PDFImporter` for dedupe.
 - `PDFImporter.swift` — adds PDFs to the ebook library.
 - `XHTMLToMarkdown.swift` — EPUB → Markdown.
 - `EbookLibraryActions.swift`, `TidyEbooksPrompt.swift` — context-menu actions + AI tidy.
@@ -123,6 +143,8 @@ This index is the first stop when:
 - `MarkdownHighlighter.swift` — syntax highlighting for the markdown editor.
 - `FrontmatterParser.swift` — YAML frontmatter parser (title override, tags).
 - `AssetURL.swift`, `FileDestinations.swift`, `FinderActions.swift`, `PasteboardActions.swift` — small helpers.
+- `StringExtras.swift` — `String.nilIfEmpty` (turns "" into nil).
+- `SecurityScope.swift` — `URL.withSecurityScope { … }` wrapper around `startAccessingSecurityScopedResource` / `defer { stop }`.
 
 ## Views
 
@@ -148,7 +170,7 @@ This index is the first stop when:
 - `YouTubeEmbedWebView.swift` — NSViewRepresentable WKWebView player loading the `youtube-nocookie.com` embed (used by the drawing canvas's video card).
 - `EditorFontResolver.swift` — font picker resolver.
 - `FocusModeView.swift` — distraction-free editor mode.
-- `DrawingDocumentView.swift` — `.nndraw` editor: pages, strokes, PDF/screenshot backgrounds, placed images, placed YouTube videos, lasso/shape/smoothed-ink tools.
+- `DrawingDocumentView.swift` (+`+Editing`, `+Media`, `+Persistence`, `+Rendering`) — `.nndraw` editor: pages, strokes, PDF/screenshot backgrounds, placed images, placed YouTube videos, lasso/shape/smoothed-ink tools. Main file = view shell + toolbar + page rendering + zoom; siblings hold ink-mutation + media insertion + load/save + static stroke helpers respectively.
 - `ShapeRecognizer.swift` — freehand stroke → idealized line/rect/ellipse/triangle (conservative; returns nil when not a confident match).
 - `BacklinksPopover.swift` — status-bar backlinks list popover.
 - `PreviewWindowController.swift` — singleton NSWindow for the floating Markdown preview.
@@ -156,7 +178,7 @@ This index is the first stop when:
 
 ### AI (`Views/AI/`)
 - `AISummarySheet.swift` — ⌥⌘S streaming summary.
-- `ChatBlockRow.swift`, `ChatTerminalView.swift`, `ChatTerminalWindowController.swift` — per-note chat UI + standalone-window controller.
+- `ChatBlockRow.swift`, `ChatTerminalView.swift` (+`+Commands` for `/search`+`/meeting`, `+BlockActions` for copy/retry/delete), `ChatTerminalWindowController.swift` — per-note chat UI + standalone-window controller.
 
 ### Assets / Audio / Media / Download / EPUB / Search / Settings / Setup / TabBar / Terminal / FileManager — see filenames, all roughly self-describing wrappers around their Service-layer counterparts.
 

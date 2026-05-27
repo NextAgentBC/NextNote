@@ -4,12 +4,16 @@ import SwiftUI
 /// vertical log of `ChatBlock` cards instead of a chat-bubble stream — each
 /// block is addressable, replayable, and can be inserted back into the
 /// active note. Lives in a standalone NSWindow (`ChatTerminalWindowController`).
+///
+/// Sibling files:
+///   - `+Commands.swift`     — `/search` and `/meeting` slash commands.
+///   - `+BlockActions.swift` — per-block context-menu handlers (copy / retry / delete).
 struct ChatTerminalView: View {
-    @EnvironmentObject private var appState: AppState
+    @EnvironmentObject var appState: AppState
 
-    @State private var blocks: [ChatBlock] = []
+    @State var blocks: [ChatBlock] = []
     @State private var input: String = ""
-    @State private var streamTask: Task<Void, Never>? = nil
+    @State var streamTask: Task<Void, Never>? = nil
     @State private var promptHistory: [String] = []
     @State private var promptHistoryIndex: Int? = nil
     /// When on, every prompt is preceded by a system message containing the
@@ -264,7 +268,7 @@ struct ChatTerminalView: View {
     private var headerBackground: Color { Color(red: 0.145, green: 0.145, blue: 0.153) }
     private var terminalBackground: Color { Color(red: 0.110, green: 0.110, blue: 0.118) }
 
-    private func contextMessages(upTo cutoff: ChatBlock? = nil) -> [ChatMessage] {
+    func contextMessages(upTo cutoff: ChatBlock? = nil) -> [ChatMessage] {
         var messages: [ChatMessage] = []
         if let note = noteContextMessage() {
             messages.append(note)
@@ -279,7 +283,7 @@ struct ChatTerminalView: View {
     /// TextDocument for the currently visible tab, if there is one. Drives
     /// the header chip + the system-message context that gets prepended to
     /// every prompt when the chip is on.
-    private var activeNote: TextDocument? {
+    var activeNote: TextDocument? {
         guard let doc = appState.activeTab?.document else { return nil }
         if doc.content.isEmpty && doc.title.isEmpty { return nil }
         return doc
@@ -390,208 +394,14 @@ struct ChatTerminalView: View {
         }
     }
 
-    // MARK: - /search slash command
-
-    /// Match `/search <query>` or `/s <query>` (leading whitespace tolerated).
-    /// Returns the trimmed query or nil when the input isn't a search command.
-    private func parseSearchCommand(_ text: String) -> String? {
-        let t = text.trimmingCharacters(in: .whitespaces)
-        for prefix in ["/search ", "/s "] {
-            if t.hasPrefix(prefix) {
-                let q = String(t.dropFirst(prefix.count)).trimmingCharacters(in: .whitespaces)
-                return q.isEmpty ? nil : q
-            }
-        }
-        return nil
-    }
-
-    /// `/search` turn: hit Tavily through credbroker, append the formatted
-    /// results as the block's response (so the user can read raw hits), then
-    /// fire one streaming follow-up so the model summarizes / answers using
-    /// those results as system context.
-    @MainActor
-    private func runSearchTurn(query: String, blockID: UUID, baseContext: [ChatMessage]) async {
-        let provider = appState.aiService.currentProvider
-        guard let broker = TavilyClient.brokerRoot(from: provider.chatBaseURL) else {
-            failBlock(blockID, error: TavilyClient.TavilyError.noBrokerEndpoint)
-            return
-        }
-
-        let endpoint = TavilyClient.endpointURL(broker: broker)
-        if let idx = blocks.firstIndex(where: { $0.id == blockID }) {
-            blocks[idx].response = "🔎 Searching `\(endpoint.absoluteString)` for **\(query)**…\n"
-        }
-
-        let results: [TavilyClient.SearchResult]
-        do {
-            results = try await TavilyClient.search(query: query, maxResults: 5, broker: broker)
-        } catch {
-            failBlock(blockID, error: error)
-            return
-        }
-
-        let markdown = TavilyClient.formatAsMarkdown(query: query, results: results, endpoint: endpoint)
-        if let idx = blocks.firstIndex(where: { $0.id == blockID }) {
-            blocks[idx].response = markdown + "\n\n---\n\n"
-        }
-
-        // Stream a synthesized answer that grounds in the search results.
-        var ctx = baseContext
-        ctx.append(ChatMessage(
-            role: .system,
-            content: """
-            The user asked for a web search via the /search command. Tavily
-            returned the following results. Use them — and only them — as
-            ground truth for this answer. Cite by [n] referring to result
-            number. Be concise.
-
-            \(markdown)
-            """
-        ))
-        ctx.append(ChatMessage(role: .user, content: "Summarize and answer based on the search results above for: \(query)"))
-
-        do {
-            let stream = appState.aiService.chat(messages: ctx, stream: true)
-            for try await event in stream {
-                guard let idx = blocks.firstIndex(where: { $0.id == blockID }) else { return }
-                switch event {
-                case .reasoning(let token):
-                    blocks[idx].reasoning += token
-                case .content(let token):
-                    blocks[idx].response += token
-                }
-            }
-            if let idx = blocks.firstIndex(where: { $0.id == blockID }),
-               blocks[idx].state == .streaming {
-                blocks[idx].state = .done
-                blocks[idx].finishedAt = Date()
-            }
-        } catch is CancellationError {
-            if let idx = blocks.firstIndex(where: { $0.id == blockID }) {
-                blocks[idx].state = .cancelled
-                blocks[idx].finishedAt = Date()
-            }
-        } catch {
-            failBlock(blockID, error: error)
-        }
-    }
-
-    // MARK: - /meeting slash command
-
-    /// `/meeting` (optionally with trailing extra instructions) runs an
-    /// organize-this-transcript prompt against the currently attached note.
-    /// Used after voice-dictating an entire meeting into a fresh note — one
-    /// click turns the raw stream into a structured summary the user can
-    /// insert back over the transcript.
-    private func parseMeetingCommand(_ text: String) -> Bool {
-        let t = text.trimmingCharacters(in: .whitespaces)
-        return t == "/meeting" || t.hasPrefix("/meeting ") || t == "/m" || t.hasPrefix("/m ")
-    }
-
-    private func meetingExtraInstruction(_ text: String) -> String {
-        let t = text.trimmingCharacters(in: .whitespaces)
-        for prefix in ["/meeting ", "/m "] {
-            if t.hasPrefix(prefix) {
-                return String(t.dropFirst(prefix.count)).trimmingCharacters(in: .whitespaces)
-            }
-        }
-        return ""
-    }
-
-    @MainActor
-    private func runMeetingTurn(extraInstruction: String, blockID: UUID, baseContext: [ChatMessage]) async {
-        guard let note = activeNote, !note.content.isEmpty else {
-            failBlock(blockID, error: MeetingError.noNote)
-            return
-        }
-
-        if let idx = blocks.firstIndex(where: { $0.id == blockID }) {
-            blocks[idx].response = "📝 Organizing meeting notes — **\(note.title.isEmpty ? "untitled" : note.title)**…\n\n"
-        }
-
-        let system = """
-        You are organizing a raw meeting transcript that the user dictated by
-        voice. The dictation contains run-on sentences, repeated phrases,
-        filler words, and missing punctuation. Restructure it into clean
-        markdown WITHOUT inventing facts. Use this section layout:
-
-        ## Summary
-        2-4 sentence overview.
-
-        ## Decisions
-        Bullet list. Each line states the decision and who made it (if known).
-
-        ## Action Items
-        Bullet list. Format: `- [ ] @owner — task (due: date if mentioned)`.
-        Use `@unassigned` when the owner isn't clear.
-
-        ## Open Questions
-        Bullet list of unresolved points raised during the meeting.
-
-        ## Key Points
-        Topic-grouped bullet list of substantive content not covered above.
-
-        Rules:
-        - Quote exact phrasing for decisions / commitments when possible.
-        - Preserve names, numbers, dates, and product/code identifiers verbatim.
-        - Drop filler ("um", "you know", "like"). Don't translate the original language.
-        - Output the markdown only — no preamble, no closing remarks.
-        """
-
-        var ctx = baseContext
-        ctx.append(ChatMessage(role: .system, content: system))
-        var user = """
-        Organize the meeting transcript from the attached note titled "\(note.title.isEmpty ? "Untitled" : note.title)" using the structure above.
-        """
-        if !extraInstruction.isEmpty {
-            user += "\n\nAdditional instructions from the user: \(extraInstruction)"
-        }
-        ctx.append(ChatMessage(role: .user, content: user))
-
-        do {
-            let stream = appState.aiService.chat(messages: ctx, stream: true)
-            for try await event in stream {
-                guard let idx = blocks.firstIndex(where: { $0.id == blockID }) else { return }
-                switch event {
-                case .reasoning(let token):
-                    blocks[idx].reasoning += token
-                case .content(let token):
-                    blocks[idx].response += token
-                }
-            }
-            if let idx = blocks.firstIndex(where: { $0.id == blockID }),
-               blocks[idx].state == .streaming {
-                blocks[idx].state = .done
-                blocks[idx].finishedAt = Date()
-            }
-        } catch is CancellationError {
-            if let idx = blocks.firstIndex(where: { $0.id == blockID }) {
-                blocks[idx].state = .cancelled
-                blocks[idx].finishedAt = Date()
-            }
-        } catch {
-            failBlock(blockID, error: error)
-        }
-    }
-
-    enum MeetingError: LocalizedError {
-        case noNote
-        var errorDescription: String? {
-            switch self {
-            case .noNote:
-                return "Open a note with your meeting transcript first — /meeting reorganizes the currently attached note."
-            }
-        }
-    }
-
-    private func failBlock(_ blockID: UUID, error: Error) {
+    func failBlock(_ blockID: UUID, error: Error) {
         guard let idx = blocks.firstIndex(where: { $0.id == blockID }) else { return }
         blocks[idx].state = .failed
         blocks[idx].error = error.localizedDescription
         blocks[idx].finishedAt = Date()
     }
 
-    private func cancelStream() {
+    func cancelStream() {
         streamTask?.cancel()
         streamTask = nil
         if let idx = blocks.indices.last, blocks[idx].state == .streaming {
@@ -623,78 +433,5 @@ struct ChatTerminalView: View {
             promptHistoryIndex = next
             input = promptHistory[next]
         }
-    }
-
-    // MARK: - Block actions
-
-    private func copyResponse(_ block: ChatBlock) {
-        copyToPasteboard(block.response)
-    }
-
-    private func copyMarkdown(_ block: ChatBlock) {
-        copyToPasteboard(block.asMarkdown)
-    }
-
-    private func insertIntoNote(_ block: ChatBlock) {
-        let snippet = block.response
-        appState.pendingSnippet = SnippetInsert(text: snippet, cursorOffset: snippet.count)
-    }
-
-    private func retry(_ block: ChatBlock) {
-        guard let idx = blocks.firstIndex(where: { $0.id == block.id }) else { return }
-        // Reset this block in place, then re-stream from the same prompt
-        // using only the *prior* blocks as context.
-        cancelStream()
-        let provider = appState.aiService.currentProvider
-        var fresh = ChatBlock(prompt: block.prompt, model: provider.chatModel, provider: provider.kind.rawValue)
-        fresh.state = .streaming
-        blocks[idx] = fresh
-        // Drop everything after this block — they're stale relative to a
-        // re-asked prompt.
-        if idx + 1 < blocks.count {
-            blocks.removeSubrange((idx + 1)..<blocks.count)
-        }
-        let blockID = fresh.id
-        var context = contextMessages(upTo: fresh)
-        context.append(ChatMessage(role: .user, content: fresh.prompt))
-
-        streamTask = Task { @MainActor in
-            let stream = appState.aiService.chat(messages: context, stream: true)
-            do {
-                for try await event in stream {
-                    guard let i = blocks.firstIndex(where: { $0.id == blockID }) else { return }
-                    switch event {
-                    case .reasoning(let token): blocks[i].reasoning += token
-                    case .content(let token): blocks[i].response += token
-                    }
-                }
-                if let i = blocks.firstIndex(where: { $0.id == blockID }), blocks[i].state == .streaming {
-                    blocks[i].state = .done
-                    blocks[i].finishedAt = Date()
-                }
-            } catch is CancellationError {
-                if let i = blocks.firstIndex(where: { $0.id == blockID }) {
-                    blocks[i].state = .cancelled
-                    blocks[i].finishedAt = Date()
-                }
-            } catch {
-                if let i = blocks.firstIndex(where: { $0.id == blockID }) {
-                    blocks[i].state = .failed
-                    blocks[i].error = error.localizedDescription
-                    blocks[i].finishedAt = Date()
-                }
-            }
-        }
-    }
-
-    private func deleteBlock(_ block: ChatBlock) {
-        blocks.removeAll(where: { $0.id == block.id })
-    }
-
-    private func copyToPasteboard(_ text: String) {
-        #if os(macOS)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-        #endif
     }
 }

@@ -1,6 +1,5 @@
 import Foundation
 import SwiftData
-import CryptoKit
 #if os(macOS)
 import PDFKit
 #endif
@@ -33,7 +32,7 @@ final class PDFImporter {
     @discardableResult
     func registerExisting(pdfURL: URL) async throws -> Book? {
         let hash = try await Task.detached(priority: .userInitiated) {
-            try Self.fileSHA256(url: pdfURL)
+            try BookHashing.fileSHA256(url: pdfURL)
         }.value
         let dup = FetchDescriptor<Book>(predicate: #Predicate { $0.contentHash == hash })
         if let existing = try? context.fetch(dup).first {
@@ -128,23 +127,4 @@ final class PDFImporter {
     }
     #endif
 
-    // MARK: - Internal
-
-    nonisolated private static func fileSHA256(url: URL) throws -> String {
-        // Stream the file in 64 KiB chunks so multi-hundred-MB PDFs don't
-        // get loaded fully into memory just to compute a dedupe hash.
-        let handle = try FileHandle(forReadingFrom: url)
-        defer { try? handle.close() }
-        var hasher = SHA256()
-        while true {
-            let chunk = try handle.read(upToCount: 1 << 16) ?? Data()
-            if chunk.isEmpty { break }
-            hasher.update(data: chunk)
-        }
-        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
-    }
-}
-
-private extension String {
-    var nilIfEmpty: String? { isEmpty ? nil : self }
 }

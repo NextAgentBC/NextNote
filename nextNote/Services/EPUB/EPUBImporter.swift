@@ -1,6 +1,5 @@
 import Foundation
 import SwiftData
-import CryptoKit
 
 // Orchestrates: copy .epub into vault → unzip to Caches → parse → insert Book.
 // Chapter export to markdown lives here too so the Book ←→ markdown round-trip
@@ -105,7 +104,7 @@ final class EPUBImporter {
         let (parsed, hash): (ParsedEPUB, String) = try await Task.detached(priority: .userInitiated) {
             try EPUBParser.unzip(epubURL: sourceURL, to: scratchDir)
             let parsed = try EPUBParser.parse(unzippedRoot: scratchDir)
-            let hash = try Self.fileSHA256(url: sourceURL)
+            let hash = try BookHashing.fileSHA256(url: sourceURL)
             return (parsed, hash)
         }.value
 
@@ -248,7 +247,7 @@ final class EPUBImporter {
     @discardableResult
     func registerExisting(epubURL: URL) async throws -> Book? {
         let hash = try await Task.detached(priority: .userInitiated) {
-            try Self.fileSHA256(url: epubURL)
+            try BookHashing.fileSHA256(url: epubURL)
         }.value
         let dupDescriptor = FetchDescriptor<Book>(
             predicate: #Predicate { $0.contentHash == hash }
@@ -358,15 +357,4 @@ final class EPUBImporter {
         return trimmed.isEmpty ? "book-\(hashPrefix)" : "\(trimmed)-\(hashPrefix)"
     }
 
-    nonisolated static func fileSHA256(url: URL) throws -> String {
-        let handle = try FileHandle(forReadingFrom: url)
-        defer { try? handle.close() }
-        var hasher = SHA256()
-        while true {
-            let chunk = try handle.read(upToCount: 1 << 16) ?? Data()
-            if chunk.isEmpty { break }
-            hasher.update(data: chunk)
-        }
-        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
-    }
 }
