@@ -67,6 +67,10 @@ struct DrawingDocumentView: View {
     private static let minZoom: CGFloat = 0.25
     private static let maxZoom: CGFloat = 4.0
 
+    // Observed so File > Export as PDF (⇧⌘E), routed here for drawing tabs, can
+    // drive `exportPDF()` from the live canvas.
+    @EnvironmentObject private var appState: AppState
+
     // @State declared without `private` so cross-file extensions can mutate.
     // Encapsulation is at the type level — nothing outside this view touches
     // these.
@@ -140,6 +144,13 @@ struct DrawingDocumentView: View {
             if t != .lasso { strokeSel = []; lassoPage = nil; lassoPoints = []; lassoMode = nil }
         }
         .onDeleteCommand { deleteSelected() }
+        #if os(macOS)
+        .onChange(of: appState.triggerDrawingExportPDF) { _, triggered in
+            guard triggered else { return }
+            appState.triggerDrawingExportPDF = false
+            exportPDF()
+        }
+        #endif
         .onAppear {
             loadIfNeeded()
             #if os(macOS)
@@ -318,7 +329,7 @@ struct DrawingDocumentView: View {
     /// A page with a background fills the width and grows as tall as the
     /// background needs (so long notes / portrait PDFs aren't squished into a
     /// narrow strip). Blank pages stay Letter-tall.
-    private func pageRenderHeight(_ i: Int) -> CGFloat {
+    func pageRenderHeight(_ i: Int) -> CGFloat {
         if let img = bgCache[i], img.size.width > 0 {
             return pageWidth * (img.size.height / img.size.width)
         }
@@ -519,6 +530,9 @@ struct DrawingDocumentView: View {
                 Button { syncFromMarkdown() } label: { Image(systemName: "doc.text.image") }
                     .help("Render the note's text as the background")
             }
+            Button { exportPDF() } label: { Image(systemName: "arrow.down.doc") }
+                .help("Export the drawing as a PDF (⇧⌘E)")
+                .disabled(isDrawingEmpty)
             if (selectedImage != nil || selectedVideo != nil) && tool == .select {
                 Button(role: .destructive) { deleteSelected() } label: { Image(systemName: "trash") }
                     .help("Delete selected item")

@@ -14,6 +14,17 @@ This index is the first stop when:
 
 ## Structural changes (newest first)
 
+- **2026-05-30 — Drawing → PDF export.** Drawings (`.nndraw`) can now be
+  exported to a multi-page PDF (one drawing page → one PDF page, Letter or
+  background-aspect). New `Services/Export/DrawingPDFRenderer.swift` (pure
+  CoreGraphics) + `Views/Editor/DrawingDocumentView+Export.swift` (gathers live
+  canvas state). Smoothing factored into a shared `cgSmoothedPath` in
+  `+Rendering` so on-screen and exported ink are identical; `pageRenderHeight`
+  made internal for reuse. Wiring: a bottom-bar Export button, and File >
+  Export as PDF (⇧⌘E) now dispatches in `exportActiveNoteAsPDF()` — drawing tabs
+  (a `.nndraw` note, or a markdown note showing its Draw layer) fire the new
+  `AppState.triggerDrawingExportPDF` one-shot that the live view observes;
+  markdown tabs keep the WKWebView path.
 - **2026-05-26 — Round 2 optimization: god-file splits + shared helpers + bug fix.**
   Split four large view/service files along their existing MARK boundaries so
   each piece sits in its own file:
@@ -116,7 +127,8 @@ This index is the first stop when:
 - `EbookLibraryActions.swift`, `TidyEbooksPrompt.swift` — context-menu actions + AI tidy.
 
 ### Export (`Services/Export/`)
-- `PDFExporter.swift` — renders Markdown notes to PDF (used by the Draw layer's "annotate over note text" too).
+- `PDFExporter.swift` — renders Markdown notes to PDF (used by the Draw layer's "annotate over note text" too). `ContentView.exportActiveNoteAsPDF()` dispatches: drawing tabs route to the drawing exporter, everything else to this WKWebView path.
+- `DrawingPDFRenderer.swift` — pure CoreGraphics multi-page PDF writer for `.nndraw` drawings (one drawing page → one PDF page; white paper, full-bleed background, placed images, video cards, smoothed ink). Takes resolved CGImage/CGPath/CGColor primitives — no SwiftUI. A final PDFKit pass adds clickable YouTube link annotations over video cards.
 
 ### Media (`Services/Media/`)
 - `AssetCatalog.swift`, `AssetLibraryActions.swift` — asset folder model + context-menu actions.
@@ -170,7 +182,7 @@ This index is the first stop when:
 - `YouTubeEmbedWebView.swift` — NSViewRepresentable WKWebView player loading the `youtube-nocookie.com` embed (used by the drawing canvas's video card).
 - `EditorFontResolver.swift` — font picker resolver.
 - `FocusModeView.swift` — distraction-free editor mode.
-- `DrawingDocumentView.swift` (+`+Editing`, `+Media`, `+Persistence`, `+Rendering`) — `.nndraw` editor: pages, strokes, PDF/screenshot backgrounds, placed images, placed YouTube videos, lasso/shape/smoothed-ink tools. Main file = view shell + toolbar + page rendering + zoom; siblings hold ink-mutation + media insertion + load/save + static stroke helpers respectively.
+- `DrawingDocumentView.swift` (+`+Editing`, `+Media`, `+Persistence`, `+Rendering`, `+Export`) — `.nndraw` editor: pages, strokes, PDF/screenshot backgrounds, placed images, placed YouTube videos, lasso/shape/smoothed-ink tools. Main file = view shell + toolbar + page rendering + zoom; siblings hold ink-mutation + media insertion + load/save + static stroke helpers + PDF export respectively. `+Export` gathers live canvas state (caches + smoothed paths) into `DrawingPDFRenderer`; reachable from the bottom-bar button or File > Export as PDF (⇧⌘E).
 - `ShapeRecognizer.swift` — freehand stroke → idealized line/rect/ellipse/triangle (conservative; returns nil when not a confident match).
 - `BacklinksPopover.swift` — status-bar backlinks list popover.
 - `PreviewWindowController.swift` — singleton NSWindow for the floating Markdown preview.

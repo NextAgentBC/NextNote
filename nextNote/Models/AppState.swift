@@ -98,6 +98,12 @@ final class AppState: ObservableObject {
     /// One-shot trigger from File > Export > PDF…
     @Published var triggerExportPDF: Bool = false
 
+    /// One-shot, view-targeted: when File > Export > PDF fires on a drawing tab
+    /// (a `.nndraw` note, or a markdown note showing its Draw layer), ContentView
+    /// routes here instead of the markdown exporter. The live `DrawingDocumentView`
+    /// observes it and renders its pages to PDF from on-screen state.
+    @Published var triggerDrawingExportPDF: Bool = false
+
     /// One-shot trigger from File > New Drawing (⌃⌘D). ContentView observes,
     /// creates a `.nndraw` note in the target folder and opens it.
     @Published var triggerNewDrawing: Bool = false

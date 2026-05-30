@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.0 — 2026-05-30
+
+### Export drawings to PDF
+
+- **Export a drawing as a PDF.** Drawing notes (`.nndraw`) now export to a multi-page PDF — one drawing page per PDF page. Each page keeps its full-page background (imported PDF page or pasted screenshot), placed images, and ink, with strokes drawn as the same smoothed **vector** curves you see on screen — crisp at any zoom, not a flattened screenshot. Blank pages export at Letter size; a page with a background takes that background's aspect.
+- **Two ways in.** A new **Export PDF** button on the drawing's bottom bar, or **File → Export as PDF (⇧⌘E)** — which now routes to the drawing exporter whenever a drawing is in front (a standalone `.nndraw` note, or a markdown note switched to its **Draw** layer). Plain markdown notes still export through the existing HTML pipeline, unchanged.
+- **Clickable video links.** An embedded YouTube card is drawn into the PDF (thumbnail + play button) and carries a clickable link back to the video, so the export stays useful as a shareable document.
+
 ## 0.6.0 — 2026-05-26
 
 ### Drawing — lasso, shape recognition, smoothed ink

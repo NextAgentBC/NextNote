@@ -24,9 +24,14 @@ extension DrawingDocumentView {
 
     /// Quadratic-Bézier smoothing through segment midpoints — turns the raw
     /// polyline into smooth ink. Stored points are untouched (still re-editable
-    /// / erasable / lasso-selectable); this is render-only.
-    static func smoothedPath(_ pts: [CGPoint]) -> Path {
-        var path = Path()
+    /// / erasable / lasso-selectable); this is render-only. Wraps the CGPath
+    /// builder below so on-screen ink and the PDF export share one geometry.
+    static func smoothedPath(_ pts: [CGPoint]) -> Path { Path(cgSmoothedPath(pts)) }
+
+    /// CGPath form of `smoothedPath` — the single source of stroke geometry,
+    /// reused by `DrawingPDFRenderer` so exported ink matches the canvas exactly.
+    static func cgSmoothedPath(_ pts: [CGPoint]) -> CGPath {
+        let path = CGMutablePath()
         guard let first = pts.first else { return path }
         path.move(to: first)
         if pts.count == 2 { path.addLine(to: pts[1]); return path }

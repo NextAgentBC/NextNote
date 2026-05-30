@@ -115,6 +115,15 @@ enum PDFExporter {
 extension ContentView {
     func exportActiveNoteAsPDF() {
         guard let tab = appState.activeTab else { return }
+
+        // Drawing tabs export their canvas to PDF, not the markdown buffer:
+        // a standalone `.nndraw` note, or a markdown note showing its Draw layer.
+        // The live DrawingDocumentView observes this one-shot and renders.
+        if drawingURL(for: tab) != nil || (tab.showDrawLayer && drawingSidecarURL(for: tab) != nil) {
+            appState.triggerDrawingExportPDF = true
+            return
+        }
+
         let markdown = tab.document.content
         let baseURL: URL? = {
             guard preferences.vaultMode,
