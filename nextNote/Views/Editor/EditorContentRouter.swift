@@ -90,8 +90,7 @@ extension ContentView {
     /// Hidden drawing sidecar next to a markdown note: `.<base>.nndraw`.
     /// Hidden (dot-prefixed) so the sidebar scanner skips it — one entry per note.
     func drawingSidecarURL(for tab: TabItem) -> URL? {
-        guard preferences.vaultMode,
-              let rel = appState.vaultPath(forTabId: tab.id),
+        guard let rel = appState.vaultPath(forTabId: tab.id),
               (rel as NSString).pathExtension.lowercased() == "md",
               let fileURL = vault.url(for: rel)
         else { return nil }
@@ -104,8 +103,7 @@ extension ContentView {
         if let external = tab.externalMediaURL {
             return external
         }
-        guard preferences.vaultMode,
-              let relPath = appState.vaultPath(forTabId: tab.id),
+        guard let relPath = appState.vaultPath(forTabId: tab.id),
               let url = vault.url(for: relPath),
               MediaKind.from(url: url) != nil
         else { return nil }
@@ -113,8 +111,7 @@ extension ContentView {
     }
 
     func noteBaseURL(for tab: TabItem) -> URL? {
-        guard preferences.vaultMode,
-              let relPath = appState.vaultPath(forTabId: tab.id),
+        guard let relPath = appState.vaultPath(forTabId: tab.id),
               let fileURL = vault.url(for: relPath)
         else { return nil }
         return fileURL.deletingLastPathComponent()
@@ -123,8 +120,7 @@ extension ContentView {
     /// Resolve a tab to its on-disk `.nndraw` URL, if it is a drawing note.
     /// Drives the EditorContentRouter branch that shows `DrawingDocumentView`.
     func drawingURL(for tab: TabItem) -> URL? {
-        guard preferences.vaultMode,
-              let relPath = appState.vaultPath(forTabId: tab.id),
+        guard let relPath = appState.vaultPath(forTabId: tab.id),
               (relPath as NSString).pathExtension.lowercased() == "nndraw",
               let url = vault.url(for: relPath)
         else { return nil }
@@ -151,17 +147,10 @@ extension ContentView {
     }
 
     func createNewDocument() {
-        if preferences.vaultMode {
-            // Unified note: one note does both text + drawing. Default opens
-            // in Draw mode (user preference); toggle to Text to type.
-            let parent = targetFolderForNew()
-            Task { await createVaultNote(inFolder: parent, openInDraw: true) }
-        } else {
-            let defaultType = FileType(rawValue: preferences.defaultFileType) ?? .txt
-            let doc = TextDocument(fileType: defaultType)
-            modelContext.insert(doc)
-            appState.openNewTab(document: doc)
-        }
+        // Unified note: one note does both text + drawing. Default opens
+        // in Draw mode (user preference); toggle to Text to type.
+        let parent = targetFolderForNew()
+        Task { await createVaultNote(inFolder: parent, openInDraw: true) }
     }
 
     @MainActor

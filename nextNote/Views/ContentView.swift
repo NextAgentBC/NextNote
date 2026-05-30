@@ -4,7 +4,7 @@ import SwiftData
 struct ContentView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var vault: VaultStore
-    @EnvironmentObject var libraryRoots: LibraryRoots
+    @EnvironmentObject var projectStore: ProjectStore
     @EnvironmentObject var backlinksIndex: BacklinksIndex
     @EnvironmentObject var tagsIndex: TagsIndex
     @Environment(\.modelContext) var modelContext
@@ -19,10 +19,7 @@ struct ContentView: View {
 
     @ViewBuilder
     private var rootView: some View {
-        if preferences.vaultMode && !libraryRoots.isConfigured {
-            LibrarySetupView()
-                .environmentObject(libraryRoots)
-        } else if appState.isFocusMode {
+        if appState.isFocusMode {
             FocusModeView()
         } else {
             mainLayout
@@ -32,17 +29,7 @@ struct ContentView: View {
     var body: some View {
         rootView
         .onAppear {
-            libraryRoots.migrateLegacyVaultBookmarkIfNeeded()
-            // One-time: unify the sidebar under a single root — the parent of
-            // the old Notes folder (which holds notes/Media/ebooks as subfolders).
-            if !UserDefaults.standard.bool(forKey: "nextnote.unifyRootDone") {
-                if let notes = libraryRoots.notesRoot {
-                    libraryRoots.adopt(kind: .notes, url: notes.deletingLastPathComponent())
-                }
-                UserDefaults.standard.set(true, forKey: "nextnote.unifyRootDone")
-            }
-            vault.adoptNotesRoot(libraryRoots.notesRoot)
-            // Backlinks index follows vault tree changes from here on.
+            vault.adoptRoot(projectStore.current)
             backlinksIndex.wireToVault(vault)
             tagsIndex.wireToVault(vault)
         }
@@ -51,16 +38,8 @@ struct ContentView: View {
         .onOpenURL { url in
             appState.openExternalFile(url: url, vault: vault, context: modelContext)
         }
-        .onReceive(libraryRoots.$notesRoot) { url in
-            vault.adoptNotesRoot(url)
-        }
-        .onAppear {
-            if !preferences.vaultMode, appState.openTabs.isEmpty {
-                let defaultType = FileType(rawValue: preferences.defaultFileType) ?? .txt
-                let doc = TextDocument(fileType: defaultType)
-                modelContext.insert(doc)
-                appState.openNewTab(document: doc)
-            }
+        .onReceive(projectStore.$current) { url in
+            vault.adoptRoot(url)
         }
         // Defer MediaLibrary's bookmark resolution + file-exists prune off the
         // main thread — used to freeze launch when the library had >100 tracks.
@@ -84,10 +63,7 @@ struct ContentView: View {
         } message: {
             Text("Pick a long-term folder for your music and video collection. nextNote will auto-scan it and add everything to your media library. You can change it later from the Media menu.")
         }
-        // Library scan: rerun when any of the three roots change.
         .task(id: vault.root) { await rescanLibrary() }
-        .onReceive(libraryRoots.$ebooksRoot) { _ in Task { await rescanLibrary() } }
-        .onReceive(libraryRoots.$mediaRoot) { _ in Task { await rescanLibrary() } }
         .onChange(of: appState.triggerRescanLibrary) { _, v in
             if v {
                 Task { await rescanLibrary() }
@@ -97,7 +73,7 @@ struct ContentView: View {
         .onChange(of: appState.triggerRescanMedia) { _, v in
             if v {
                 appState.triggerRescanMedia = false
-                Task { await MediaLibrary.shared.scanRoot(libraryRoots.mediaRoot) }
+                Task { await MediaLibrary.shared.scanRoot(projectStore.subdir(.media)) }
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .reembedLibraryRequested)) { _ in
@@ -110,7 +86,7 @@ struct ContentView: View {
         // Rescan whenever the window regains focus — user dropped a file in
         // Finder, switches back, expects to see it instantly. Debounce kept
         // generous (60s) because the focus event fires on every Cmd-Tab and
-        // each rescan walks three trees (vault + ebooks + media).
+        // each rescan walks the project tree.
         #if os(macOS)
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
             let now = Date()
@@ -185,15 +161,15 @@ struct ContentView: View {
         .sheet(isPresented: $appState.showDownloadHistory) {
             DownloadHistoryView()
                 .environmentObject(appState)
-                .environmentObject(libraryRoots)
+                .environmentObject(projectStore)
         }
-        // Asset Library sheet — grid browser for the fourth library root
-        // (images / video / audio). Cells are draggable onto the markdown
-        // editor, which turns the drop into `![](…)` syntax.
+        // Asset Library sheet — grid browser for the project's Assets/
+        // subfolder. Cells are draggable onto the markdown editor, which
+        // turns the drop into `![](…)` syntax.
         .sheet(isPresented: $appState.showAssetLibrary) {
             AssetLibraryView()
                 .environmentObject(appState)
-                .environmentObject(libraryRoots)
+                .environmentObject(projectStore)
         }
         #if os(macOS)
         // Reconcile / Dedupe sheet — AI groups duplicate artist folders and
@@ -201,7 +177,7 @@ struct ContentView: View {
         .sheet(isPresented: $appState.showReconcileLibrary) {
             LibraryReconcileSheet()
                 .environmentObject(appState)
-                .environmentObject(libraryRoots)
+                .environmentObject(projectStore)
         }
         // Floating preview window — toggled via View > Floating Preview
         // (⌘⇧P) or the toolbar pop-out button. Opens / closes a standalone
@@ -216,7 +192,6 @@ struct ContentView: View {
                 PreviewWindowController.shared.show(
                     appState: appState,
                     vault: vault,
-                    libraryRoots: libraryRoots,
                     preferences: preferences
                 )
             }
@@ -247,7 +222,6 @@ struct ContentView: View {
     private func saveAll() {
         VaultSaveCoordinator.saveAll(
             modelContext: modelContext,
-            vaultMode: preferences.vaultMode,
             appState: appState,
             vault: vault
         )
@@ -255,10 +229,7 @@ struct ContentView: View {
 
     @MainActor
     private func rescanLibrary() async {
-        // Ebooks/PDFs now live in the unified file tree (Books are created on
-        // demand when opened), so the separate Ebooks-folder scan is gone.
-        // Media still feeds the ambient player.
-        await MediaLibrary.shared.scanRoot(libraryRoots.mediaRoot)
+        await MediaLibrary.shared.scanRoot(projectStore.subdir(.media))
     }
 
     /// Resolve a clicked `[[wiki-link]]` target against the vault tree and
@@ -319,11 +290,7 @@ struct ContentView: View {
 
     @ViewBuilder
     private var sidebar: some View {
-        if preferences.vaultMode {
-            LibrarySidebar()
-        } else {
-            FileListView(documents: documents)
-        }
+        LibrarySidebar()
     }
 
     // MARK: - Main Layout

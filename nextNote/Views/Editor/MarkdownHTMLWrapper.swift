@@ -6,22 +6,19 @@ import Foundation
 /// `prefers-color-scheme`.
 enum MarkdownHTMLWrapper {
     static func wrap(_ markdown: String, baseURL: URL?) -> String {
-        let htmlBody = MarkdownToHTML.render(markdown)
-        // <base href="…/"> tells the browser to resolve relative `<img src=…>`
-        // and friends against the note's vault folder, even though the HTML
-        // itself lives in /tmp/nextnote-previews/.
-        let baseTag: String = {
-            guard let baseURL else { return "" }
-            let dir = baseURL.hasDirectoryPath ? baseURL : baseURL.deletingLastPathComponent()
-            let href = dir.absoluteString.hasSuffix("/") ? dir.absoluteString : dir.absoluteString + "/"
-            return "<base href=\"\(href)\">"
-        }()
+        var htmlBody = MarkdownToHTML.render(markdown)
+        // Rewrite every local asset URL (`file://` / absolute paths / relatives)
+        // to `nextnote-asset://localhost<abs-path>` so they resolve through
+        // PreviewAssetSchemeHandler — the preview page itself loads with an
+        // `https://www.youtube-nocookie.com` origin so YouTube iframes work,
+        // which makes the page cross-origin to `file://` and blocks direct
+        // file-URL subresource loads. http(s)/data/asset URLs pass through.
+        htmlBody = rewriteAssetURLs(in: htmlBody, baseURL: baseURL)
         return """
         <!DOCTYPE html>
         <html>
         <head>
         <meta charset="UTF-8">
-        \(baseTag)
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <!-- KaTeX: $…$ inline and $$…$$ display math. Loaded from CDN; no
              network = math falls back to raw text and everything else still
@@ -115,5 +112,58 @@ enum MarkdownHTMLWrapper {
         </body>
         </html>
         """
+    }
+
+    private static let srcAttrRegex: NSRegularExpression? = {
+        try? NSRegularExpression(pattern: #"src=["']([^"']+)["']"#, options: [.caseInsensitive])
+    }()
+
+    private static func rewriteAssetURLs(in html: String, baseURL: URL?) -> String {
+        guard let regex = srcAttrRegex else { return html }
+        let ns = html as NSString
+        let matches = regex.matches(in: html, range: NSRange(location: 0, length: ns.length))
+        guard !matches.isEmpty else { return html }
+
+        let baseDir: URL? = {
+            guard let baseURL else { return nil }
+            return baseURL.hasDirectoryPath ? baseURL : baseURL.deletingLastPathComponent()
+        }()
+
+        var output = ""
+        var cursor = 0
+        for match in matches {
+            let full = match.range
+            let src = ns.substring(with: match.range(at: 1))
+            if full.location > cursor {
+                output += ns.substring(with: NSRange(location: cursor, length: full.location - cursor))
+            }
+            let rewritten = rewriteToAssetScheme(src, baseDir: baseDir) ?? src
+            output += "src=\"\(rewritten)\""
+            cursor = full.location + full.length
+        }
+        if cursor < ns.length {
+            output += ns.substring(with: NSRange(location: cursor, length: ns.length - cursor))
+        }
+        return output
+    }
+
+    private static func rewriteToAssetScheme(_ src: String, baseDir: URL?) -> String? {
+        let lower = src.lowercased()
+        if lower.hasPrefix("http://") || lower.hasPrefix("https://") ||
+           lower.hasPrefix("data:") || lower.hasPrefix("\(PreviewAssetSchemeHandler.scheme):") {
+            return nil
+        }
+        let absPath: String
+        if lower.hasPrefix("file://") {
+            guard let url = URL(string: src) else { return nil }
+            absPath = url.path
+        } else if src.hasPrefix("/") {
+            absPath = src
+        } else {
+            guard let baseDir else { return nil }
+            absPath = baseDir.appendingPathComponent(src).path
+        }
+        let encoded = absPath.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? absPath
+        return "\(PreviewAssetSchemeHandler.scheme)://localhost\(encoded)"
     }
 }

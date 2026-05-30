@@ -25,6 +25,52 @@ This index is the first stop when:
   (a `.nndraw` note, or a markdown note showing its Draw layer) fire the new
   `AppState.triggerDrawingExportPDF` one-shot that the live view observes;
   markdown tabs keep the WKWebView path.
+- **2026-05-27 — Markdown preview moved off `file://` origin to fix YouTube Error 153.**
+  YouTube's embed endpoint started rejecting iframes whose parent has a
+  `file://` origin (WebKit strips the Referer header on file-URL pages →
+  embed returns "Error 153, Video player configuration error"). Iframe
+  attribute fixes (`referrerpolicy`, `<meta name="referrer">`) are known
+  unreliable in WKWebView. Switched `MarkdownPreviewView` from
+  `loadFileURL` to `loadHTMLString` with
+  `baseURL = https://www.youtube-nocookie.com/__nextnote_preview__/` so
+  YouTube iframes are effectively same-origin (proven approach reused
+  from `YouTubeEmbedWebView`). To still serve local images/video/audio
+  to the now cross-origin page, added `PreviewAssetSchemeHandler` (new
+  file) — a `WKURLSchemeHandler` for `nextnote-asset://` that reads the
+  requested file and returns it with `Access-Control-Allow-Origin: *`.
+  `MarkdownHTMLWrapper` no longer emits a `<base href>` tag; instead it
+  rewrites every local `src` (file://, absolute path, or relative against
+  the note dir) to `nextnote-asset://localhost<abs-path>`. Pass-through
+  for http(s)/data/already-asset URLs. Dropped the `/tmp/nextnote-previews/`
+  HTML file write entirely — `loadHTMLString` doesn't need it.
+- **2026-05-27 — `[text](youtube-url)` link form also embeds as iframe.**
+  Previously only `![](youtube-url)` (image syntax) and a bare youtube URL
+  alone on its own line became inline players; the link form `[text](url)`
+  passed through as a clickable `<a>` and the in-app WKWebView would
+  navigate away to youtube.com with no back affordance. `MarkdownEmbeds`
+  now runs a second pass with a `(?<!\!)` negative-lookbehind regex that
+  catches the link form and emits a YOUTUBE embed sentinel only when the
+  URL matches `extractYouTubeID`; other link domains stay as ordinary
+  links. Stale "users keep the choice between embedding and linking"
+  comment in `MarkdownToHTML` updated.
+- **2026-05-27 — Project model refactor; fixes SwiftData/icloudmailagent collision.**
+  Replaced the 3-root vault concept (Notes/Media/Ebooks/Assets, each its own
+  security-scoped bookmark in `UserDefaults`) with a single-folder Project
+  abstraction. `ProjectStore` now owns the current project + a `recents.json`
+  list (in `~/Library/Application Support/NextNote/`). `ModelContainer` is
+  built per project at `<project>/.nextnote/library.store` instead of the
+  SwiftData default (`~/Library/Application Support/default.store`) — which
+  Apple's `icloudmailagent` ALSO uses, causing the "Vault Error: The file
+  'default.store' couldn't be opened" dialog when SwiftData saves raced the
+  daemon. Side cleanups: deleted `LibraryRoots`, `LibrarySetupView`,
+  `VaultBookmark`, `VaultPickerView`, `VaultMigrator`, `BookLibrary`,
+  `EbookLibraryActions` (all dead or replaced); removed the `vaultMode` flag
+  and its 9 guard sites (the directory-backed mode is the only mode now);
+  Media library "root" UI dropped (Media/Ebooks/Assets are conventional
+  subdirs under the project root, auto-created on open). Library menu →
+  Project menu (Open / Open Recent / Close / reveals). One-shot migration
+  reads the old `libraryRoot_notes` bookmark, seeds it into recents, then
+  deletes every legacy key. Net: **−7 files, −500 lines**.
 - **2026-05-26 — Round 2 optimization: god-file splits + shared helpers + bug fix.**
   Split four large view/service files along their existing MARK boundaries so
   each piece sits in its own file:
@@ -73,6 +119,13 @@ This index is the first stop when:
 
 ## Removed files (newest first)
 
+- 2026-05-27: `Services/Vault/LibraryRoots.swift` — replaced by `ProjectStore` (one-project model; convention subdirs).
+- 2026-05-27: `Services/Vault/VaultBookmark.swift` — bookmark ownership moved into `ProjectStore.recents.json`.
+- 2026-05-27: `Services/Vault/VaultMigrator.swift` — 0.1.x→0.4 one-shot, long since run on all user machines.
+- 2026-05-27: `Views/Setup/LibrarySetupView.swift` — replaced by `WelcomeView` (single folder picker).
+- 2026-05-27: `Views/Vault/VaultPickerView.swift` — root view now routes through `WelcomeView` when no project is open.
+- 2026-05-27: `Services/EPUB/BookLibrary.swift` — Ebooks-folder scan was already disabled (Books register on open); only had dead callsites.
+- 2026-05-27: `Services/EPUB/EbookLibraryActions.swift` — no remaining callers after `BookLibrary` retired.
 - 2026-05-26: `Views/Editor/DrawingSheet.swift`, `Views/Editor/DrawingCanvasView.swift` — floating quick-sketch surface, superseded by `DrawingDocumentView`.
 - 2026-05-26: `Views/Sidebar/LibrarySidebar+Assets.swift`, `Views/Sidebar/LibrarySidebar+Ebooks.swift`, `Views/Sidebar/BooksSection.swift`, `Views/Sidebar/LibrarySidebar+Shared.swift` — Assets/Ebooks tray UI, replaced by the unified `NotesSection` file tree in 0.4.0.
 
@@ -80,7 +133,7 @@ This index is the first stop when:
 
 ## App entry
 
-- `nextNoteApp.swift` — `@main`; window scene, environment object wiring (AppState, VaultStore, LibraryRoots, AssetCatalog, PinnedFoldersStore, BacklinksIndex, TagsIndex).
+- `nextNoteApp.swift` — `@main`; window scene, environment-object wiring (AppState, VaultStore, ProjectStore, AssetCatalog, PinnedFoldersStore, BacklinksIndex, TagsIndex). Hosts `RootView` (Welcome vs ProjectShellView) and the per-project `ModelContainer` (built at `<project>/.nextnote/library.store`).
 
 ## Models (`nextNote/Models/`)
 
@@ -120,11 +173,11 @@ This index is the first stop when:
 - `DownloadJobCoordinator.swift` — background download queue + ffmpeg post-processing.
 
 ### EPUB (`Services/EPUB/`)
-- `EPUBParser.swift`, `EPUBImporter.swift`, `BookLibrary.swift` — EPUB OPF/NCX parsing + library scanner.
+- `EPUBParser.swift`, `EPUBImporter.swift` — EPUB OPF/NCX parsing + on-demand import.
 - `BookHashing.swift` — streamed SHA-256 helper shared by `EPUBImporter` and `PDFImporter` for dedupe.
 - `PDFImporter.swift` — adds PDFs to the ebook library.
 - `XHTMLToMarkdown.swift` — EPUB → Markdown.
-- `EbookLibraryActions.swift`, `TidyEbooksPrompt.swift` — context-menu actions + AI tidy.
+- `TidyEbooksPrompt.swift` — Claude prompt used by the Ebook-tidy terminal flow.
 
 ### Export (`Services/Export/`)
 - `PDFExporter.swift` — renders Markdown notes to PDF (used by the Draw layer's "annotate over note text" too). `ContentView.exportActiveNoteAsPDF()` dispatches: drawing tabs route to the drawing exporter, everything else to this WKWebView path.
@@ -139,8 +192,8 @@ This index is the first stop when:
 - `KeychainStore.swift` — generic keychain wrapper (AI API keys, app-specific creds).
 
 ### Vault (`Services/Vault/`)
-- `VaultStore.swift`, `VaultBookmark.swift`, `VaultMigrator.swift` — vault root, security-scoped bookmark, legacy bookmark migration.
-- `LibraryRoots.swift` — three roots: Notes / Media / Ebooks.
+- `ProjectStore.swift` — current project + `recents.json`-backed list; security-scoped bookmark per recent entry. Owns the convention `Subdir` enum (`Media`/`Ebooks`/`Assets`/`.nextnote`) and the legacy `libraryRoot_*` → recents migration.
+- `VaultStore.swift` — adopts the project root, scans the tree, performs FS mutations. Stateless w.r.t. bookmarks (ProjectStore owns those).
 - `VaultTreeScanner.swift` — builds `FolderNode` tree off the main actor.
 - `VaultFSActions.swift`, `NoteIO.swift`, `NewDocumentRouter.swift`, `FileImportRouter.swift` — file-system operations (create / move / trash / atomic write).
 - `VaultSaveCoordinator.swift` — debounced save coordinator for notes.
@@ -151,7 +204,7 @@ This index is the first stop when:
 
 ## Utilities (`nextNote/Utilities/`)
 
-- `nextNoteCommands.swift` — `Commands` builder: File/Edit/Workflow/Library menus + key shortcuts.
+- `nextNoteCommands.swift` — `Commands` builder: File/Edit/Workflow/Project/Media menus + key shortcuts.
 - `MarkdownHighlighter.swift` — syntax highlighting for the markdown editor.
 - `FrontmatterParser.swift` — YAML frontmatter parser (title override, tags).
 - `AssetURL.swift`, `FileDestinations.swift`, `FinderActions.swift`, `PasteboardActions.swift` — small helpers.
@@ -172,13 +225,12 @@ This index is the first stop when:
 
 ### Vault tree (`Views/Vault/`)
 - `VaultTreeView.swift` (+`+Rows`, `+Actions`, `+Toolbar`, `+Context`) — the main file tree (rows, drag/drop, context menu, toolbar).
-- `VaultPickerView.swift` — first-launch folder picker.
 
 ### Editor (`Views/Editor/`)
 - `EditorView.swift`, `EditorAreaView.swift`, `EditorContentRouter.swift` — routes the active tab to the right surface (markdown, drawing, PDF, EPUB, media, etc.).
 - `MacTextEditorView.swift`, `IOSTextEditorView.swift` — platform-specific text editor backings.
 - `MarkdownToolbarView.swift` — quick-insert snippet toolbar (headings, lists, code, table, link, image, hr, math, footnote).
-- `MarkdownToHTML.swift`, `MarkdownHTMLWrapper.swift`, `MarkdownPreviewView.swift`, `MarkdownEmbeds.swift` — markdown → HTML pipeline (image / video / audio / YouTube embeds) + WKWebView preview.
+- `MarkdownToHTML.swift`, `MarkdownHTMLWrapper.swift`, `MarkdownPreviewView.swift`, `MarkdownEmbeds.swift`, `PreviewAssetSchemeHandler.swift` — markdown → HTML pipeline (image / video / audio / YouTube embeds) + WKWebView preview. Preview loads via `loadHTMLString` with an https `baseURL` so YouTube iframes work; local assets are served by the `nextnote-asset://` scheme handler.
 - `YouTubeEmbedWebView.swift` — NSViewRepresentable WKWebView player loading the `youtube-nocookie.com` embed (used by the drawing canvas's video card).
 - `EditorFontResolver.swift` — font picker resolver.
 - `FocusModeView.swift` — distraction-free editor mode.
@@ -192,7 +244,10 @@ This index is the first stop when:
 - `AISummarySheet.swift` — ⌥⌘S streaming summary.
 - `ChatBlockRow.swift`, `ChatTerminalView.swift` (+`+Commands` for `/search`+`/meeting`, `+BlockActions` for copy/retry/delete), `ChatTerminalWindowController.swift` — per-note chat UI + standalone-window controller.
 
-### Assets / Audio / Media / Download / EPUB / Search / Settings / Setup / TabBar / Terminal / FileManager — see filenames, all roughly self-describing wrappers around their Service-layer counterparts.
+### Setup (`Views/Setup/`)
+- `WelcomeView.swift` — shown when no project is open: recent-projects sidebar + Open Existing Folder / New Project buttons.
+
+### Assets / Audio / Media / Download / EPUB / Search / Settings / TabBar / Terminal / FileManager — see filenames, all roughly self-describing wrappers around their Service-layer counterparts.
 
 ---
 

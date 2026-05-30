@@ -29,7 +29,7 @@ extension ContentView {
 
             #if os(macOS)
             if appState.showTerminal {
-                TerminalContainerView(workingDirectory: libraryRoots.notesRoot)
+                TerminalContainerView(workingDirectory: vault.root)
                     .environmentObject(appState)
                     .frame(minHeight: 152, idealHeight: 252, maxHeight: 452)
             }

@@ -9,72 +9,21 @@ final class VaultStore: ObservableObject {
     @Published private(set) var isScanning: Bool = false
     @Published private(set) var lastError: String?
 
-    private var accessing: URL?
-
     /// Expose scanner constants for sidebar display.
     static let imageExts: Set<String> = VaultTreeScanner.imageExts
 
-    init() {
-        // Ownership of the notes-root bookmark has moved to LibraryRoots.
-        // Don't resolve here — ContentView calls `adopt(url:)` after
-        // LibraryRoots resolves its Notes bookmark.
-    }
-
-    /// Hand over the Notes root resolved by LibraryRoots. No bookmark is saved.
-    func adoptNotesRoot(_ url: URL?) {
+    /// Adopt the project root resolved by ProjectStore. ProjectStore owns
+    /// the security-scoped bookmark + access lifetime; this just tracks
+    /// the URL and rescans the tree.
+    func adoptRoot(_ url: URL?) {
         guard let url else {
-            accessing?.stopAccessingSecurityScopedResource()
-            accessing = nil
             root = nil
             tree = .empty
             return
         }
         if root == url { return }
-        adopt(url: url, persistBookmark: false)
-    }
-
-    deinit {
-        accessing?.stopAccessingSecurityScopedResource()
-    }
-
-    // MARK: - Root selection
-
-    func pickVault() async {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.allowsMultipleSelection = false
-        panel.prompt = "Choose Vault"
-        panel.message = "Pick a folder to use as your nextNote vault. Notes will live here as .md files."
-
-        let response = await panel.beginSheet()
-        guard response == .OK, let url = panel.url else { return }
-        adopt(url: url, persistBookmark: true)
-    }
-
-    private func restoreIfAvailable() {
-        do {
-            guard let url = try VaultBookmark.resolve() else { return }
-            adopt(url: url, persistBookmark: false)
-        } catch {
-            lastError = "Vault bookmark is stale: \(error.localizedDescription). Pick the folder again."
-            VaultBookmark.clear()
-        }
-    }
-
-    private func adopt(url: URL, persistBookmark: Bool) {
-        accessing?.stopAccessingSecurityScopedResource()
-        accessing = nil
-        guard url.startAccessingSecurityScopedResource() else {
-            lastError = "Could not access \(url.path). Sandbox denied."
-            return
-        }
-        accessing = url
         root = url
         lastError = nil
-        if persistBookmark {
-            try? VaultBookmark.save(url)
-        }
         Task { await scan() }
     }
 
@@ -182,25 +131,5 @@ final class VaultStore: ObservableObject {
         let newRel = try VaultFSActions.duplicate(relPath, root: root)
         await scan()
         return newRel
-    }
-
-    // MARK: - Forget
-
-    func forgetVault() {
-        accessing?.stopAccessingSecurityScopedResource()
-        accessing = nil
-        root = nil
-        tree = .empty
-        VaultBookmark.clear()
-    }
-}
-
-private extension NSOpenPanel {
-    func beginSheet() async -> NSApplication.ModalResponse {
-        await withCheckedContinuation { continuation in
-            self.begin { response in
-                continuation.resume(returning: response)
-            }
-        }
     }
 }

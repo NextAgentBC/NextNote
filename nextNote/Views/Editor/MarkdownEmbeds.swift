@@ -1,12 +1,20 @@
 import Foundation
 
-/// Walk every `![alt](url)` in markdown source and swap it for a sentinel
-/// that records embed kind (img / video / audio) + original src + alt.
-/// The sentinel survives HTML escaping and is restored to a real
-/// `<img>` / `<video>` / `<audio>` tag afterwards.
+/// Walk markdown source and swap embeddable spans for sentinels that record
+/// embed kind (img / video / audio / youtube) + original src + alt. The
+/// sentinel survives HTML escaping and is restored to a real `<img>` /
+/// `<video>` / `<audio>` / `<iframe>` tag afterwards.
+///
+/// Two forms are recognized:
+///   - `![alt](url)` → always embedded (kind by extension; youtube domain → iframe)
+///   - `[text](youtube-url)` → embedded as iframe (other domains stay as <a>)
 enum MarkdownEmbeds {
     private static let mdImageRegex: NSRegularExpression? = {
         try? NSRegularExpression(pattern: #"!\[(.*?)\]\(([^\)]+)\)"#)
+    }()
+
+    private static let mdLinkRegex: NSRegularExpression? = {
+        try? NSRegularExpression(pattern: #"(?<!\!)\[(.*?)\]\(([^\)]+)\)"#)
     }()
 
     private static let sentinelRegex: NSRegularExpression? = {
@@ -17,6 +25,12 @@ enum MarkdownEmbeds {
     }()
 
     static func replace(in text: String) -> String {
+        var output = replaceImageForms(in: text)
+        output = replaceYouTubeLinks(in: output)
+        return output
+    }
+
+    private static func replaceImageForms(in text: String) -> String {
         guard let regex = mdImageRegex else { return text }
         let ns = text as NSString
         let matches = regex.matches(in: text, range: NSRange(location: 0, length: ns.length))
@@ -34,6 +48,35 @@ enum MarkdownEmbeds {
             let src = normalizeSrc(rawSrc)
             let kind = embedKind(for: rawSrc)
             output += "%%EMBED_\(kind)_START%%\(src)%%EMBED_ALT%%\(alt)%%EMBED_END%%"
+            cursor = full.location + full.length
+        }
+        if cursor < ns.length {
+            output += ns.substring(with: NSRange(location: cursor, length: ns.length - cursor))
+        }
+        return output
+    }
+
+    private static func replaceYouTubeLinks(in text: String) -> String {
+        guard let regex = mdLinkRegex else { return text }
+        let ns = text as NSString
+        let matches = regex.matches(in: text, range: NSRange(location: 0, length: ns.length))
+        guard !matches.isEmpty else { return text }
+
+        var output = ""
+        var cursor = 0
+        for match in matches {
+            let full = match.range
+            if full.location > cursor {
+                output += ns.substring(with: NSRange(location: cursor, length: full.location - cursor))
+            }
+            let alt = ns.substring(with: match.range(at: 1))
+            let rawSrc = ns.substring(with: match.range(at: 2))
+            if embedKind(for: rawSrc) == "YOUTUBE" {
+                let src = normalizeSrc(rawSrc)
+                output += "%%EMBED_YOUTUBE_START%%\(src)%%EMBED_ALT%%\(alt)%%EMBED_END%%"
+            } else {
+                output += ns.substring(with: full)
+            }
             cursor = full.location + full.length
         }
         if cursor < ns.length {

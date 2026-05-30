@@ -1,6 +1,24 @@
 import Foundation
 
 enum AssetLibraryActions {
+    /// Built-in subfolder buckets. `other` catches anything MediaKind
+    /// doesn't classify (PDFs, zips, etc.); `docs` holds text-like
+    /// references near the media. Users can add custom subfolders too.
+    static let defaultSubfolders: [String] = [
+        "images", "videos", "audio", "docs", "other",
+    ]
+
+    /// Create the default-bucket directories under the Assets root if
+    /// missing. Safe to call repeatedly.
+    static func ensureLayout(under root: URL) {
+        let fm = FileManager.default
+        try? fm.createDirectory(at: root, withIntermediateDirectories: true)
+        for name in defaultSubfolders {
+            let dir = root.appendingPathComponent(name, isDirectory: true)
+            try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+    }
+
     /// Route a media kind to its default subfolder under root, creating it if needed.
     static func bucketDirectory(for kind: MediaKind, root: URL) -> URL {
         let bucket: String

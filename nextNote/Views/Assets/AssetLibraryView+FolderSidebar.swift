@@ -54,7 +54,7 @@ extension AssetLibraryView {
     /// Merge default folders with actual disk folders — always show the 5
     /// built-ins, add any user-created extras, alphabetical.
     var sidebarFolderList: [String] {
-        var set = Set(LibraryRoots.defaultAssetSubfolders)
+        var set = Set(AssetLibraryActions.defaultSubfolders)
         set.formUnion(assetCatalog.folders)
         return set.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
     }

@@ -23,16 +23,16 @@ final class DownloadJobCoordinator: ObservableObject {
     /// non-main thread) can hop back here without capturing a
     /// non-Sendable ModelContext in their closure.
     private var modelContext: ModelContext?
-    private weak var libraryRoots: LibraryRoots?
+    private weak var projectStore: ProjectStore?
     private weak var appState: AppState?
 
     private init() {}
 
     /// Wire the coordinator to the app's environment. ContentView calls
     /// this once on first appear.
-    func bind(modelContext: ModelContext, libraryRoots: LibraryRoots, appState: AppState) {
+    func bind(modelContext: ModelContext, projectStore: ProjectStore, appState: AppState) {
         self.modelContext = modelContext
-        self.libraryRoots = libraryRoots
+        self.projectStore = projectStore
         self.appState = appState
     }
 
@@ -48,12 +48,12 @@ final class DownloadJobCoordinator: ObservableObject {
         saveTo: String,
         autoClassify: Bool,
         modelContext ctx: ModelContext,
-        libraryRoots: LibraryRoots,
+        projectStore: ProjectStore,
         appState: AppState,
         library: MediaLibrary,
         player: AmbientPlayer
     ) -> UUID {
-        bind(modelContext: ctx, libraryRoots: libraryRoots, appState: appState)
+        bind(modelContext: ctx, projectStore: projectStore, appState: appState)
         let job = DownloadJob(
             sourceURL: sourceURL,
             mode: mode,
@@ -82,12 +82,12 @@ final class DownloadJobCoordinator: ObservableObject {
     func retry(
         _ jobID: UUID,
         modelContext ctx: ModelContext,
-        libraryRoots: LibraryRoots,
+        projectStore: ProjectStore,
         appState: AppState,
         library: MediaLibrary,
         player: AmbientPlayer
     ) {
-        bind(modelContext: ctx, libraryRoots: libraryRoots, appState: appState)
+        bind(modelContext: ctx, projectStore: projectStore, appState: appState)
         guard let job = fetch(jobID, in: ctx) else { return }
         job.status = .queued
         job.phase = .idle
@@ -226,7 +226,8 @@ final class DownloadJobCoordinator: ObservableObject {
             var finalURL = result.outputURL
 
             if saveTo == "assets" {
-                if let assetsRoot = libraryRoots?.ensureAssetsRoot() {
+                if let assetsRoot = projectStore?.subdir(.assets) {
+                    AssetLibraryActions.ensureLayout(under: assetsRoot)
                     let bucket = chosenMode == .audio ? "audio" : "videos"
                     let bucketDir = assetsRoot.appendingPathComponent(bucket, isDirectory: true)
                     try? FileManager.default.createDirectory(at: bucketDir, withIntermediateDirectories: true)
@@ -250,7 +251,7 @@ final class DownloadJobCoordinator: ObservableObject {
                     tags: m.tags,
                     playlist: m.playlist
                 )
-                let classifyRoot = libraryRoots?.mediaRoot ?? folder
+                let classifyRoot = projectStore?.subdir(.media) ?? folder
                 do {
                     finalURL = try await MediaCategorizer.organize(
                         url: finalURL,

@@ -1,11 +1,10 @@
 import SwiftUI
 
 #if os(macOS)
-/// Settings → Media tab. Single home for media-related paths + behavior
-/// toggles previously scattered across the Library menu, Media menu, and
-/// AI settings (yt-dlp download folder).
+/// Settings → Media tab. Per-feature settings (auto-organize toggles) and
+/// the external-tool paths (yt-dlp, ffmpeg, ambient folder). The media
+/// library now lives at `<project>/Media/` by convention — no picker.
 struct MediaSettingsView: View {
-    @EnvironmentObject private var libraryRoots: LibraryRoots
     @StateObject private var mediaLibrary = MediaLibrary.shared
     @StateObject private var locator = YTDLPLocator.shared
 
@@ -15,16 +14,22 @@ struct MediaSettingsView: View {
     var body: some View {
         Form {
             Section {
-                pathRow(
-                    label: "Media library root",
-                    help: "Where AI Organize moves files into <Artist>/ folders. Drag-drop targets land here.",
-                    url: libraryRoots.mediaRoot,
-                    pick: { Task { await libraryRoots.pick(kind: .media) } },
-                    reveal: { FinderActions.reveal(libraryRoots.mediaRoot) }
-                )
+                Toggle("Auto-organize after YouTube download", isOn: $autoOrgYT)
+                    .help("After yt-dlp finishes, AI extracts artist + song and moves the file into <Media>/<Artist>/.")
+                Toggle("Auto-organize on drag-drop", isOn: $autoOrgDrop)
+                    .help("Files dropped onto the ambient bar run through AI Organize before joining the library.")
+            } header: {
+                Text("Behavior")
+            } footer: {
+                Text("Auto-organize writes into the current project's `Media/` subfolder.")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+
+            Section {
                 pathRow(
                     label: "Ambient folder",
-                    help: "Background music library — scanned for the ambient player. Independent of the media library root.",
+                    help: "Background music library — scanned for the ambient player. Independent of the project's Media folder.",
                     url: mediaLibrary.ambientFolderURL,
                     pick: { Task { _ = await mediaLibrary.pickAmbientFolder() } },
                     reveal: { FinderActions.reveal(mediaLibrary.ambientFolderURL) }
@@ -38,15 +43,6 @@ struct MediaSettingsView: View {
                 )
             } header: {
                 Text("Folders")
-            }
-
-            Section {
-                Toggle("Auto-organize after YouTube download", isOn: $autoOrgYT)
-                    .help("After yt-dlp finishes, AI extracts artist + song and moves the file into <Media>/<Artist>/.")
-                Toggle("Auto-organize on drag-drop", isOn: $autoOrgDrop)
-                    .help("Files dropped onto the ambient bar run through AI Organize before joining the library.")
-            } header: {
-                Text("Behavior")
             }
 
             Section {

@@ -11,7 +11,7 @@ struct YouTubeDownloadView: View {
     @Environment(\.dismiss) var dismiss
     @Environment(\.modelContext) var modelContext
     @EnvironmentObject var appState: AppState
-    @EnvironmentObject var libraryRoots: LibraryRoots
+    @EnvironmentObject var projectStore: ProjectStore
     @StateObject var locator = YTDLPLocator.shared
     @StateObject var library = MediaLibrary.shared
     @StateObject var player = AmbientPlayer.shared

@@ -95,9 +95,7 @@ struct MarkdownWebView: NSViewRepresentable {
     func makeCoordinator() -> MarkdownPreviewCoordinator { MarkdownPreviewCoordinator() }
 
     func makeNSView(context: Context) -> WKWebView {
-        let config = WKWebViewConfiguration()
-        config.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
-        let webView = WKWebView(frame: .zero, configuration: config)
+        let webView = WKWebView(frame: .zero, configuration: makePreviewConfig())
         webView.setValue(false, forKey: "drawsBackground")
         webView.navigationDelegate = context.coordinator
         context.coordinator.loadImmediately(in: webView, markdown: markdown, baseURL: baseURL)
@@ -116,9 +114,7 @@ struct MarkdownWebView: UIViewRepresentable {
     func makeCoordinator() -> MarkdownPreviewCoordinator { MarkdownPreviewCoordinator() }
 
     func makeUIView(context: Context) -> WKWebView {
-        let config = WKWebViewConfiguration()
-        config.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
-        let webView = WKWebView(frame: .zero, configuration: config)
+        let webView = WKWebView(frame: .zero, configuration: makePreviewConfig())
         webView.isOpaque = false
         webView.backgroundColor = .clear
         webView.scrollView.backgroundColor = .clear
@@ -133,29 +129,21 @@ struct MarkdownWebView: UIViewRepresentable {
 }
 #endif
 
-/// Write the rendered HTML to a per-note file under the system temp dir.
-/// `MarkdownHTMLWrapper.wrap` injects `<base href="…/">` so relative
-/// asset paths still resolve against the note's vault folder without
-/// having to drop a `.nextnote-preview.html` next to the note itself.
-private func loadPreview(in webView: WKWebView, markdown: String, baseURL: URL?) {
-    let html = MarkdownHTMLWrapper.wrap(markdown, baseURL: baseURL)
-    let key = previewFileKey(for: baseURL)
-    let writeDir = FileManager.default.temporaryDirectory
-        .appendingPathComponent("nextnote-previews", isDirectory: true)
-    try? FileManager.default.createDirectory(at: writeDir, withIntermediateDirectories: true)
-    let htmlFile = writeDir.appendingPathComponent("preview-\(key).html")
-    do {
-        try html.write(to: htmlFile, atomically: true, encoding: .utf8)
-    } catch {
-        let fallback = FileManager.default.temporaryDirectory.appendingPathComponent("preview.html")
-        try? html.write(to: fallback, atomically: true, encoding: .utf8)
-        webView.loadFileURL(fallback, allowingReadAccessTo: URL(fileURLWithPath: "/"))
-        return
-    }
-    webView.loadFileURL(htmlFile, allowingReadAccessTo: URL(fileURLWithPath: "/"))
+private func makePreviewConfig() -> WKWebViewConfiguration {
+    let config = WKWebViewConfiguration()
+    config.setURLSchemeHandler(PreviewAssetSchemeHandler(),
+                               forURLScheme: PreviewAssetSchemeHandler.scheme)
+    return config
 }
 
-private func previewFileKey(for baseURL: URL?) -> String {
-    guard let baseURL else { return "default" }
-    return String(baseURL.absoluteString.hash & 0x7fffffff, radix: 16)
+/// Load the rendered HTML via `loadHTMLString` with an https `baseURL` so
+/// embedded YouTube iframes don't trip Error 153 (WebKit strips the Referer
+/// on file:// pages; YouTube's embed endpoint rejects). Local assets are
+/// served by `PreviewAssetSchemeHandler` via the custom `nextnote-asset://`
+/// scheme registered on the config — `MarkdownHTMLWrapper` rewrites every
+/// local `src` to that scheme before this point.
+private func loadPreview(in webView: WKWebView, markdown: String, baseURL: URL?) {
+    let html = MarkdownHTMLWrapper.wrap(markdown, baseURL: baseURL)
+    let previewOrigin = URL(string: "https://www.youtube-nocookie.com/__nextnote_preview__/")!
+    webView.loadHTMLString(html, baseURL: previewOrigin)
 }

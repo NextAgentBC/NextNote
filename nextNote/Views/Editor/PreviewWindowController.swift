@@ -23,7 +23,6 @@ final class PreviewWindowController {
     func show(
         appState: AppState,
         vault: VaultStore,
-        libraryRoots: LibraryRoots,
         preferences: UserPreferences
     ) {
         NSLog("[PreviewWindowController] show() called")
@@ -36,7 +35,6 @@ final class PreviewWindowController {
         let host = FloatingPreviewHost()
             .environmentObject(appState)
             .environmentObject(vault)
-            .environmentObject(libraryRoots)
             .environmentObject(preferences)
 
         let hosting = NSHostingController(rootView: host)
@@ -170,8 +168,7 @@ struct FloatingPreviewHost: View {
     /// extension scope and we don't want to pull `MarkdownPreviewView`'s
     /// resolver into a shared helper just yet.
     private func noteBaseURL(for tab: TabItem) -> URL? {
-        guard preferences.vaultMode,
-              let relPath = appState.vaultPath(forTabId: tab.id),
+        guard let relPath = appState.vaultPath(forTabId: tab.id),
               let fileURL = vault.url(for: relPath)
         else { return nil }
         return fileURL.deletingLastPathComponent()

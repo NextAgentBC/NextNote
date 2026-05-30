@@ -7,7 +7,7 @@ import AppKit
 /// Mac menu bar commands
 struct NextNoteCommands: Commands {
     @ObservedObject var appState: AppState
-    @ObservedObject var libraryRoots: LibraryRoots
+    @ObservedObject var projectStore: ProjectStore
     @ObservedObject var pinnedFolders: PinnedFoldersStore
     @ObservedObject var vault: VaultStore
 
@@ -152,41 +152,58 @@ struct NextNoteCommands: Commands {
             .keyboardShortcut("\\", modifiers: [.command, .shift])
         }
 
-        // Library menu — one-stop controls for Notes / Media / Ebooks roots.
-        CommandMenu("Library") {
-            Button("Open Folder in Sidebar…") {
-                Task { await pinnedFolders.pickAndAdd() }
+        // Project menu — open / switch / close, plus convention reveals.
+        CommandMenu("Project") {
+            Button("Open Project…") {
+                Task { _ = await projectStore.pick() }
             }
             .keyboardShortcut("o", modifiers: [.command, .shift])
 
+            Menu("Open Recent") {
+                if projectStore.recents.isEmpty {
+                    Text("No Recent Projects")
+                } else {
+                    ForEach(projectStore.recents) { entry in
+                        Button(entry.name) {
+                            _ = projectStore.openRecent(entry)
+                        }
+                    }
+                    Divider()
+                    Button("Clear Menu") {
+                        for entry in projectStore.recents {
+                            projectStore.removeRecent(id: entry.id)
+                        }
+                    }
+                }
+            }
+
+            Button("Close Project") {
+                projectStore.close()
+            }
+            .disabled(projectStore.current == nil)
+
             Divider()
 
-            Button("Change Notes Folder…") {
-                Task { await libraryRoots.pick(kind: .notes) }
-            }
-            Button("Change Media Folder…") {
-                Task { await libraryRoots.pick(kind: .media) }
-            }
-            Button("Change Ebooks Folder…") {
-                Task { await libraryRoots.pick(kind: .ebooks) }
+            Button("Open Folder in Sidebar…") {
+                Task { await pinnedFolders.pickAndAdd() }
             }
 
             Divider()
 
-            Button("Reveal Notes in Finder") {
-                revealInFinder(libraryRoots.notesRoot)
+            Button("Reveal Project in Finder") {
+                revealInFinder(projectStore.current)
             }
-            .disabled(libraryRoots.notesRoot == nil)
+            .disabled(projectStore.current == nil)
 
-            Button("Reveal Media in Finder") {
-                revealInFinder(libraryRoots.mediaRoot)
+            Button("Reveal Media Folder in Finder") {
+                revealInFinder(projectStore.subdir(.media))
             }
-            .disabled(libraryRoots.mediaRoot == nil)
+            .disabled(projectStore.current == nil)
 
-            Button("Reveal Ebooks in Finder") {
-                revealInFinder(libraryRoots.ebooksRoot)
+            Button("Reveal Ebooks Folder in Finder") {
+                revealInFinder(projectStore.subdir(.ebooks))
             }
-            .disabled(libraryRoots.ebooksRoot == nil)
+            .disabled(projectStore.current == nil)
 
             Divider()
 

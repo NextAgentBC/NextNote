@@ -8,7 +8,7 @@ import UniformTypeIdentifiers
 struct MediaLibraryView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var appState: AppState
-    @EnvironmentObject var libraryRoots: LibraryRoots
+    @EnvironmentObject var projectStore: ProjectStore
     @StateObject var library = MediaLibrary.shared
     @StateObject var player = AmbientPlayer.shared
     @StateObject var locator = YTDLPLocator.shared
@@ -99,7 +99,7 @@ struct MediaLibraryView: View {
                         Label("Organize Library", systemImage: "wand.and.sparkles")
                     }
                 }
-                .disabled(isAutoCleaning || (libraryRoots.mediaRoot ?? locator.downloadFolderURL) == nil)
+                .disabled(isAutoCleaning || (projectStore.subdir(.media) ?? locator.downloadFolderURL) == nil)
                 .help("AI extracts artist + song from each track, renames file + moves into <Artist>/ folders under the Media root")
             }
             ToolbarItem(placement: .primaryAction) {
@@ -108,7 +108,7 @@ struct MediaLibraryView: View {
                 } label: {
                     Label("Reconcile…", systemImage: "rectangle.on.rectangle.angled")
                 }
-                .disabled(libraryRoots.mediaRoot == nil)
+                .disabled(projectStore.subdir(.media) == nil)
                 .help("Detect duplicate artist folders + duplicate songs, review, and clean up")
             }
             ToolbarItem(placement: .primaryAction) {

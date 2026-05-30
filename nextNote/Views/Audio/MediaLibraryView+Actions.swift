@@ -13,7 +13,7 @@ extension MediaLibraryView {
     /// Media root (where Auto-Clean already lands files); falls back to
     /// the yt-dlp download folder if Media isn't set up yet.
     func tidyTargetRoot() -> URL? {
-        libraryRoots.mediaRoot ?? library.ambientFolderURL ?? locator.downloadFolderURL
+        projectStore.subdir(.media) ?? library.ambientFolderURL ?? locator.downloadFolderURL
     }
 
     /// Drop a pre-baked prompt into the embedded terminal so Claude CLI
@@ -35,7 +35,7 @@ extension MediaLibraryView {
     }
 
     func runAutoClean() {
-        guard let root = libraryRoots.mediaRoot ?? locator.downloadFolderURL else { return }
+        guard let root = projectStore.subdir(.media) ?? locator.downloadFolderURL else { return }
         isAutoCleaning = true
         autoCleanStatus = "Starting…"
         Task {
@@ -85,7 +85,7 @@ extension MediaLibraryView {
     }
 
     func autoOrganize(_ tracks: [Track]) {
-        guard let root = libraryRoots.mediaRoot ?? locator.downloadFolderURL else { return }
+        guard let root = projectStore.subdir(.media) ?? locator.downloadFolderURL else { return }
         isOrganizing = true
         organizeStatus = "Starting…"
         Task {

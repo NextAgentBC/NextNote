@@ -4,9 +4,9 @@ import SwiftData
 import AppKit
 #endif
 
-/// Sidebar hierarchy driven by `VaultStore.tree`. Replaces FileListView when
-/// vaultMode is on. Click a file to open as a tab. Toolbar / row / actions /
-/// context menu live in adjacent extension files.
+/// Sidebar hierarchy driven by `VaultStore.tree`. Click a file to open as
+/// a tab. Toolbar / row / actions / context menu live in adjacent
+/// extension files.
 struct VaultTreeView: View {
     @EnvironmentObject var vault: VaultStore
     @EnvironmentObject var appState: AppState
@@ -27,9 +27,7 @@ struct VaultTreeView: View {
 
     var body: some View {
         Group {
-            if vault.root == nil {
-                VaultPickerView()
-            } else if vault.tree.children.isEmpty && !vault.isScanning {
+            if vault.tree.children.isEmpty && !vault.isScanning {
                 emptyVault
             } else {
                 list

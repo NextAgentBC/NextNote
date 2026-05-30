@@ -5,11 +5,21 @@ import AppKit
 #endif
 
 extension AssetLibraryView {
+    /// Resolve the project's Assets folder and seed the default
+    /// subdirectories. Returns nil when no project is open.
+    func ensureAssetsLayout() {
+        guard let root = projectStore.subdir(.assets) else { return }
+        AssetLibraryActions.ensureLayout(under: root)
+    }
+
+    private var assetsRoot: URL? { projectStore.subdir(.assets) }
+
     func importURLs(_ urls: [URL]) {
-        guard let root = libraryRoots.ensureAssetsRoot() else {
-            importError = "Assets folder is not configured."
+        guard let root = assetsRoot else {
+            importError = "Open a project first."
             return
         }
+        AssetLibraryActions.ensureLayout(under: root)
         let fm = FileManager.default
         var imported = 0
         var skipped: [String] = []
@@ -38,7 +48,7 @@ extension AssetLibraryView {
         }
 
         Task {
-            await assetCatalog.scan(root: libraryRoots.assetsRoot)
+            await assetCatalog.scan(root: root)
             await MainActor.run { appState.triggerRescanLibrary = true }
         }
     }
@@ -59,7 +69,7 @@ extension AssetLibraryView {
     /// an asset cell onto a folder row in the left sidebar.
     func moveAssets(urls: [URL], to folder: String?) {
         guard let folder else { return }
-        guard let root = libraryRoots.assetsRoot else { return }
+        guard let root = assetsRoot else { return }
         let fm = FileManager.default
         let destDir: URL
         if !folder.isEmpty {
@@ -93,7 +103,7 @@ extension AssetLibraryView {
             }
         }
         if moved > 0 {
-            Task { await assetCatalog.scan(root: libraryRoots.assetsRoot) }
+            Task { await assetCatalog.scan(root: root) }
         }
     }
 
@@ -101,11 +111,12 @@ extension AssetLibraryView {
         let name = newFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
         newFolderName = ""
         guard !name.isEmpty else { return }
-        guard let root = libraryRoots.ensureAssetsRoot() else { return }
+        guard let root = assetsRoot else { return }
+        AssetLibraryActions.ensureLayout(under: root)
         do {
             let dir = try AssetLibraryActions.createFolder(named: name, under: root)
             folderFilter = dir.lastPathComponent
-            Task { await assetCatalog.scan(root: libraryRoots.assetsRoot) }
+            Task { await assetCatalog.scan(root: root) }
         } catch {
             importError = "Create folder failed: \(error.localizedDescription)"
         }
@@ -163,10 +174,11 @@ extension AssetLibraryView {
         }
 
         // Raw image data.
-        guard let root = libraryRoots.ensureAssetsRoot() else {
-            importError = "Assets folder is not configured."
+        guard let root = assetsRoot else {
+            importError = "Open a project first."
             return
         }
+        AssetLibraryActions.ensureLayout(under: root)
         guard let image = NSImage(pasteboard: pb) else {
             importError = "No image or file found on the clipboard."
             return
@@ -184,7 +196,7 @@ extension AssetLibraryView {
         do {
             try png.write(to: dest, options: .atomic)
             Task {
-                await assetCatalog.scan(root: libraryRoots.assetsRoot)
+                await assetCatalog.scan(root: root)
                 await MainActor.run { appState.triggerRescanLibrary = true }
             }
         } catch {
@@ -204,7 +216,7 @@ extension AssetLibraryView {
     }
 
     func revealRootInFinder() {
-        FinderActions.reveal(libraryRoots.assetsRoot)
+        FinderActions.reveal(assetsRoot)
     }
 
     func copyEmbedMarkdown(_ asset: AssetCatalog.Asset) {
@@ -214,7 +226,7 @@ extension AssetLibraryView {
     func trash(_ asset: AssetCatalog.Asset) {
         do {
             try FileManager.default.trashItem(at: asset.url, resultingItemURL: nil)
-            Task { await assetCatalog.scan(root: libraryRoots.assetsRoot) }
+            Task { await assetCatalog.scan(root: assetsRoot) }
         } catch {
             importError = "Delete failed: \(error.localizedDescription)"
         }

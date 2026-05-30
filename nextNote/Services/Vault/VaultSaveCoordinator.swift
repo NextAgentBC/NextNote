@@ -1,21 +1,17 @@
 import Foundation
 import SwiftData
 
-/// Persists open tabs. Vault-backed tabs write their buffer to disk via
-/// NoteIO; legacy flat-mode tabs persist via SwiftData. Both run on every
-/// save trigger — vault mode might still have a legacy TextDocument hanging
-/// around mid-transition.
+/// Persists open tabs: SwiftData save + write any modified note buffers
+/// to disk via NoteIO.
 enum VaultSaveCoordinator {
     @MainActor
     static func saveAll(
         modelContext: ModelContext,
-        vaultMode: Bool,
         appState: AppState,
         vault: VaultStore
     ) {
         try? modelContext.save()
 
-        guard vaultMode else { return }
         for (tabId, relativePath) in appState.vaultOpenPairs {
             guard
                 let tab = appState.openTabs.first(where: { $0.id == tabId }),

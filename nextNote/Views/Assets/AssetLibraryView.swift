@@ -17,7 +17,7 @@ import AppKit
 struct AssetLibraryView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var appState: AppState
-    @EnvironmentObject var libraryRoots: LibraryRoots
+    @EnvironmentObject var projectStore: ProjectStore
     @EnvironmentObject var assetCatalog: AssetCatalog
 
     @State var kindFilter: KindFilter = .all
@@ -72,11 +72,12 @@ struct AssetLibraryView: View {
             Text("Creates a subfolder under the Assets root.")
         }
         .task {
-            _ = libraryRoots.ensureAssetsRoot()
-            await assetCatalog.scan(root: libraryRoots.assetsRoot)
+            ensureAssetsLayout()
+            await assetCatalog.scan(root: projectStore.subdir(.assets))
         }
-        .onChange(of: libraryRoots.assetsRoot) { _, url in
-            Task { await assetCatalog.scan(root: url) }
+        .onChange(of: projectStore.current) { _, _ in
+            ensureAssetsLayout()
+            Task { await assetCatalog.scan(root: projectStore.subdir(.assets)) }
         }
         .alert("Import failed", isPresented: .init(
             get: { importError != nil },

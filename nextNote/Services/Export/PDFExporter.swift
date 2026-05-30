@@ -126,8 +126,7 @@ extension ContentView {
 
         let markdown = tab.document.content
         let baseURL: URL? = {
-            guard preferences.vaultMode,
-                  let rel = appState.vaultPath(forTabId: tab.id),
+            guard let rel = appState.vaultPath(forTabId: tab.id),
                   let fileURL = vault.url(for: rel) else { return nil }
             return fileURL.deletingLastPathComponent()
         }()

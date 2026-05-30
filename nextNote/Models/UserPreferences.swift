@@ -23,12 +23,6 @@ final class UserPreferences: ObservableObject {
     // MARK: - Sync
     @AppStorage("enableICloudSync") var enableICloudSync: Bool = false
 
-    // MARK: - Vault (R0 redesign feature flag)
-    // When false, app runs legacy flat SwiftData-backed document model.
-    // When true, app runs new directory-backed vault model (R1+).
-    // Default false until R2 migration lands and is verified on the user's data.
-    @AppStorage("vaultMode") var vaultMode: Bool = true
-
     var editorFont: Font {
         .custom(fontName, size: fontSize)
     }

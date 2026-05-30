@@ -7,7 +7,7 @@ struct DownloadHistoryView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var appState: AppState
-    @EnvironmentObject private var libraryRoots: LibraryRoots
+    @EnvironmentObject private var projectStore: ProjectStore
     @StateObject private var library = MediaLibrary.shared
     @StateObject private var player = AmbientPlayer.shared
 
@@ -190,7 +190,7 @@ struct DownloadHistoryView: View {
                     DownloadJobCoordinator.shared.retry(
                         job.id,
                         modelContext: modelContext,
-                        libraryRoots: libraryRoots,
+                        projectStore: projectStore,
                         appState: appState,
                         library: library,
                         player: player

@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 // button opens the full media manager (tracks + playlists).
 struct AmbientBar: View {
     @EnvironmentObject private var appState: AppState
-    @EnvironmentObject private var libraryRoots: LibraryRoots
+    @EnvironmentObject private var projectStore: ProjectStore
     @StateObject private var player = AmbientPlayer.shared
     @StateObject private var library = MediaLibrary.shared
     @State private var showQueuePopover: Bool = false
@@ -53,7 +53,7 @@ struct AmbientBar: View {
     private func handleDrop(_ urls: [URL]) {
         guard !urls.isEmpty else { return }
         let autoOrgDrop = UserDefaults.standard.object(forKey: "media.autoOrganizeOnDrop") as? Bool ?? true
-        if autoOrgDrop, let root = libraryRoots.mediaRoot {
+        if autoOrgDrop, let root = projectStore.subdir(.media) {
             organizingStatus = "Organizing \(urls.count) item(s)…"
             Task { @MainActor in
                 let finalURLs = await MediaCategorizer.organizeBatch(

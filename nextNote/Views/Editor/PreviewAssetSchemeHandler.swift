@@ -1,0 +1,50 @@
+import Foundation
+import UniformTypeIdentifiers
+import WebKit
+
+/// Serves local files referenced by the markdown preview. The preview
+/// itself loads via `loadHTMLString` with an `https://www.youtube-nocookie.com`
+/// baseURL so YouTube iframes negotiate their embed origin (a `file://`
+/// origin trips YouTube Error 153 / "Video player configuration error" —
+/// WebKit strips the Referer on file:// pages and YouTube's embed page
+/// rejects). That makes the preview cross-origin to `file://`, blocking
+/// `<img src="file:///…">` etc. — so we rewrite every local asset URL in
+/// the rendered HTML to `nextnote-asset://localhost<abs-path>` and serve
+/// the bytes here, with `Access-Control-Allow-Origin: *` so the
+/// cross-origin fetch is allowed.
+final class PreviewAssetSchemeHandler: NSObject, WKURLSchemeHandler {
+    static let scheme = "nextnote-asset"
+
+    func webView(_ webView: WKWebView, start urlSchemeTask: WKURLSchemeTask) {
+        guard let url = urlSchemeTask.request.url else {
+            urlSchemeTask.didFailWithError(URLError(.badURL))
+            return
+        }
+        let fileURL = URL(fileURLWithPath: url.path)
+        do {
+            let data = try Data(contentsOf: fileURL)
+            let ext = fileURL.pathExtension
+            let mime = UTType(filenameExtension: ext)?.preferredMIMEType
+                ?? "application/octet-stream"
+            let response = HTTPURLResponse(
+                url: url,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: [
+                    "Content-Type": mime,
+                    "Content-Length": "\(data.count)",
+                    "Access-Control-Allow-Origin": "*"
+                ]
+            )!
+            urlSchemeTask.didReceive(response)
+            urlSchemeTask.didReceive(data)
+            urlSchemeTask.didFinish()
+        } catch {
+            urlSchemeTask.didFailWithError(error)
+        }
+    }
+
+    func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask) {
+        // Synchronous load — nothing to cancel.
+    }
+}

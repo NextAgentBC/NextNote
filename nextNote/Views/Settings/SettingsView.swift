@@ -12,7 +12,7 @@ struct SettingsView: View {
             EditorSettingsView()
                 .tabItem { Label("Editor", systemImage: "doc.text") }
             VaultSettingsView()
-                .tabItem { Label("Vault", systemImage: "folder") }
+                .tabItem { Label("Project", systemImage: "folder") }
             MediaSettingsView()
                 .tabItem { Label("Media", systemImage: "music.note") }
             SyncSettingsView()

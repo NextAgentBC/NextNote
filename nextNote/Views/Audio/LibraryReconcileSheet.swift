@@ -8,7 +8,7 @@ import SwiftUI
 /// runs `LibraryReconciler.apply` and closes.
 struct LibraryReconcileSheet: View {
     @Environment(\.dismiss) private var dismiss
-    @EnvironmentObject private var libraryRoots: LibraryRoots
+    @EnvironmentObject private var projectStore: ProjectStore
     @StateObject private var library = MediaLibrary.shared
     @EnvironmentObject private var appState: AppState
 
@@ -371,7 +371,7 @@ struct LibraryReconcileSheet: View {
     // MARK: - Actions
 
     private func runPlan() async {
-        guard let root = libraryRoots.mediaRoot else {
+        guard let root = projectStore.subdir(.media) else {
             error = "Media library root is not configured."
             phase = .error
             return
@@ -389,7 +389,7 @@ struct LibraryReconcileSheet: View {
     }
 
     private func runApply() async {
-        guard let root = libraryRoots.mediaRoot else { return }
+        guard let root = projectStore.subdir(.media) else { return }
         phase = .applying
         status = "Applying…"
         let o = await LibraryReconciler.apply(plan, underRoot: root, library: library) { line in

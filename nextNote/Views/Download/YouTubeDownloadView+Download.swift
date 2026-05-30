@@ -24,7 +24,7 @@ extension YouTubeDownloadView {
             saveTo: saveToRaw,
             autoClassify: autoClassify,
             modelContext: modelContext,
-            libraryRoots: libraryRoots,
+            projectStore: projectStore,
             appState: appState,
             library: library,
             player: player

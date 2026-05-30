@@ -106,9 +106,10 @@ enum MarkdownToHTML {
                 html += "<li>\(processInline(String(line[match.upperBound...])))</li>\n"; continue
             }
             // A YouTube link alone on its own line becomes an embedded player.
-            // (The `![](url)` image form still works via processInline; an
-            // inline `[text](url)` link is left as a normal clickable link, so
-            // users keep the choice between embedding and linking.)
+            // (`![](url)` and `[text](url)` link forms with a youtube domain
+            // are also embedded — handled inside processInline via
+            // MarkdownEmbeds.replace. Non-youtube `[text](url)` stays as a
+            // normal clickable link.)
             if trimmed.hasPrefix("http"), !trimmed.contains(" "),
                MarkdownEmbeds.extractYouTubeID(from: trimmed) != nil {
                 html += MarkdownEmbeds.emitTag(kind: "YOUTUBE", src: trimmed, alt: "") + "\n"
