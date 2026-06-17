@@ -26,6 +26,10 @@ brew install xcodegen            # one-time
 # optional (enables YouTube downloads):
 brew install yt-dlp ffmpeg
 
+# Xcode 26+ only — Metal moved to a downloadable component the build needs.
+# Run once if `make build` fails with "missing Metal Toolchain":
+xcodebuild -downloadComponent MetalToolchain
+
 git clone https://github.com/NextAgentBC/NextNote.git
 cd NextNote
 make build                       # xcodegen + xcodebuild + ad-hoc sign

@@ -296,7 +296,13 @@ struct DrawingDocumentView: View {
                     if focusedPage == i, !isPressing { finalizeStroke(on: i) }
                 }
             }
-            .gesture(
+            // `highPriorityGesture`, not `gesture`: the enclosing two-axis
+            // ScrollView otherwise swallows the press-drag (macOS 26 claims
+            // pointer drags aggressively), so ink never registers once the
+            // page is tall enough to scroll — e.g. a markdown note rendered
+            // as a full-height background. High priority lets the canvas win
+            // pointer drags while two-finger / wheel scroll still scrolls.
+            .highPriorityGesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
                         isPressing = true

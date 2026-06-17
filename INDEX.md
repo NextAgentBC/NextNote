@@ -14,6 +14,17 @@ This index is the first stop when:
 
 ## Structural changes (newest first)
 
+- **2026-06-16 — Drawing input + PDF asset fixes.** `Views/Editor/DrawingDocumentView.swift`:
+  the page canvas's draw drag is now `.highPriorityGesture` (was `.gesture`) — on
+  macOS 26 the two-axis `ScrollView` swallows pointer drags once a page scrolls
+  (e.g. a markdown note rendered as a full-height **Draw** background), so ink
+  never registered; high priority lets the canvas win drags while two-finger /
+  wheel scroll still scrolls. `Services/Export/PDFExporter.swift`: register
+  `PreviewAssetSchemeHandler` on the export `WKWebViewConfiguration` so
+  `nextnote-asset://` local images resolve in exported PDFs and in
+  `syncFromMarkdown` Draw backgrounds — the on-screen preview already did this;
+  the exporter was missed in the preview refactor.
+
 - **2026-05-30 — Drawing → PDF export.** Drawings (`.nndraw`) can now be
   exported to a multi-page PDF (one drawing page → one PDF page, Letter or
   background-aspect). New `Services/Export/DrawingPDFRenderer.swift` (pure

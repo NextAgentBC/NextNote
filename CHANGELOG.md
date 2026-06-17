@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Handwriting stopped registering in a markdown note's Draw layer (macOS 26).** On macOS 26 the enclosing scroll view swallows the canvas's draw gesture once a page is tall enough to scroll — which is exactly a markdown note in **Draw** mode, where the note renders as a full-height page background. The canvas now uses a high-priority gesture, so ink wins pointer drags while two-finger / wheel scrolling still scrolls. Short blank `.nndraw` pages had nothing to scroll, so they kept working — which is why this only showed up when drawing over a rendered note.
+- **Blank local images in exported PDFs and Draw backgrounds.** The PDF exporter wasn't registering the `nextnote-asset://` scheme handler the preview refactor introduced, so locally-referenced images (`![](local.png)`) 404'd — missing from **File → Export as PDF** and from the markdown-note Draw background that rasterizes that PDF (`syncFromMarkdown`). The exporter now registers the same handler the on-screen preview uses. Text-only notes were unaffected.
+
+### Build
+
+- **Xcode 26 needs the Metal toolchain component.** A from-clean build now fails with `cannot execute tool 'metal' due to missing Metal Toolchain` (a transitive dependency compiles a `.metal` shader). Install it once: `xcodebuild -downloadComponent MetalToolchain`.
+
 ## 0.7.0 — 2026-05-30
 
 ### Export drawings to PDF
