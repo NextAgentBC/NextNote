@@ -15,9 +15,11 @@ This index is the first stop when:
 ## Structural changes (newest first)
 
 - **2026-06-16 — Security + correctness sweep (review pass).** PDFKit ink
-  annotations (`Views/EPUB/PDFReaderAnnotation.swift`) now use tight bounds +
-  path-local coordinates — macOS 26 stopped rendering full-page ink appearance
-  streams, so freehand ink vanished on mouse-up. `PreviewAssetSchemeHandler` is
+  annotations (`Views/EPUB/PDFReaderAnnotation.swift`) are now self-rendered —
+  a `StrokeOverlayView` paints the ink and re-projects page→view on scroll/zoom,
+  because macOS 26 PDFKit no longer draws a programmatically-added `.ink`
+  annotation on screen (no redraw force works); the `PDFAnnotation` is still
+  added so the stroke saves into the file. `PreviewAssetSchemeHandler` is
   containment-checked: serves only files under `projectRoot` (set from
   `ContentView` on adopt) or the previewed note's own dir, closing an
   arbitrary-local-file read via crafted note `src`. `ProjectStore` releases the

@@ -40,11 +40,20 @@ enum PDFInkColor: String, CaseIterable, Identifiable {
 
 // MARK: - Annotating PDFView
 
-/// PDFView subclass that turns mouse drags into ink `PDFAnnotation`s on the
-/// page under the cursor. Coordinate conversion uses PDFView's own
-/// `page(for:nearest:)` + `convert(_:to:)` so points land in page space (no
-/// manual Y-flip). When `tool == .hand` it defers to PDFView for normal
-/// scroll / text selection.
+/// PDFView subclass that turns mouse drags into ink on the page under the
+/// cursor. Coordinate conversion uses PDFView's own `page(for:nearest:)` +
+/// `convert(_:to:)` so points land in page space (no manual Y-flip). When
+/// `tool == .hand` it defers to PDFView for normal scroll / text selection.
+///
+/// Display vs. persistence are deliberately decoupled. macOS 26's PDFKit no
+/// longer renders a programmatically-added `.ink` `PDFAnnotation` on screen
+/// (no redraw force — `setNeedsDisplay`, `layoutDocumentView`, even a full
+/// document detach/re-attach — brings it back; the appearance stream is never
+/// drawn). So **display** is done by `StrokeOverlayView`, which paints the ink
+/// ourselves over the page; the `PDFAnnotation` is still added so the stroke
+/// **persists** into the file on `PDFDocument.write` (and shows in Preview /
+/// other readers). The overlay re-projects page-space strokes to view space on
+/// every scroll / zoom so the ink tracks the page.
 final class AnnotatingPDFView: PDFView {
     var tool: PDFAnnTool = .hand
     var inkColor: NSColor = .systemRed
@@ -54,19 +63,54 @@ final class AnnotatingPDFView: PDFView {
     private struct StrokeRecord {
         let page: PDFPage
         let annotation: PDFAnnotation
-        let bbox: CGRect
+        let bbox: CGRect           // page coords — eraser hit-test
+        let points: [CGPoint]      // page coords — overlay re-projection
+        let color: NSColor
+        let width: CGFloat
     }
-    /// Session-scoped record of ink we added, with tight bounding boxes — used
-    /// by the eraser to hit-test (annotations carry full-page bounds so we
-    /// can't hit-test by `annotation.bounds`). Strokes from a previously-saved
-    /// file aren't in this list (erasing those is a later enhancement).
+    /// Session-scoped record of ink we added. Drives both the eraser hit-test
+    /// and the overlay's on-screen rendering. Strokes from a previously-saved
+    /// file aren't in this list (erasing / re-rendering those is a later
+    /// enhancement — they render via PDFKit's own loaded-annotation path).
     private var records: [StrokeRecord] = []
     private var drawingPage: PDFPage?
     private var pagePoints: [CGPoint] = []
-    // Live preview: an overlay subview strokes the in-progress line in view
-    // coords (instant feedback); the real PDFAnnotation is committed on mouseUp.
+    // Live in-progress stroke, in view coords (instant feedback).
     private var overlayPoints: [CGPoint] = []
     private var strokeOverlay: StrokeOverlayView?
+    private var observingScroll = false
+
+    // MARK: Scroll / zoom observation — keep the overlay aligned to the page.
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window != nil, !observingScroll else { return }
+        observingScroll = true
+        let nc = NotificationCenter.default
+        nc.addObserver(self, selector: #selector(refreshOverlay),
+                       name: .PDFViewScaleChanged, object: self)
+        nc.addObserver(self, selector: #selector(refreshOverlay),
+                       name: .PDFViewPageChanged, object: self)
+        if let clip = documentScrollView()?.contentView {
+            clip.postsBoundsChangedNotifications = true
+            nc.addObserver(self, selector: #selector(refreshOverlay),
+                           name: NSView.boundsDidChangeNotification, object: clip)
+        }
+    }
+
+    deinit { NotificationCenter.default.removeObserver(self) }
+
+    /// PDFView hosts its scrolling document content in an internal NSScrollView.
+    private func documentScrollView() -> NSScrollView? {
+        func find(_ v: NSView) -> NSScrollView? {
+            for sub in v.subviews {
+                if let sv = sub as? NSScrollView { return sv }
+                if let nested = find(sub) { return nested }
+            }
+            return nil
+        }
+        return find(self)
+    }
 
     private func pagePoint(for event: NSEvent, page forcedPage: PDFPage? = nil) -> (PDFPage, CGPoint)? {
         let viewPoint = convert(event.locationInWindow, from: nil)
@@ -83,7 +127,7 @@ final class AnnotatingPDFView: PDFView {
             drawingPage = page
             pagePoints = [p]
             overlayPoints = [convert(event.locationInWindow, from: nil)]
-            updateOverlay()
+            refreshOverlay()
         case .eraser:
             if let (page, p) = pagePoint(for: event) { eraseHit(p, on: page) }
         }
@@ -97,7 +141,7 @@ final class AnnotatingPDFView: PDFView {
             guard let page = drawingPage, let (_, p) = pagePoint(for: event, page: page) else { return }
             pagePoints.append(p)
             overlayPoints.append(convert(event.locationInWindow, from: nil))
-            updateOverlay()
+            refreshOverlay()
         case .eraser:
             if let (page, p) = pagePoint(for: event) { eraseHit(p, on: page) }
         }
@@ -115,40 +159,16 @@ final class AnnotatingPDFView: PDFView {
             drawingPage = nil
             pagePoints = []
             overlayPoints = []
-            strokeOverlay?.viewPoints = []
-            strokeOverlay?.needsDisplay = true
+            refreshOverlay()
         case .eraser:
             break
         }
     }
 
-    private func updateOverlay() {
-        if strokeOverlay == nil {
-            let ov = StrokeOverlayView(frame: bounds)
-            ov.autoresizingMask = [.width, .height]
-            addSubview(ov)
-            strokeOverlay = ov
-        }
-        guard let ov = strokeOverlay else { return }
-        if ov.superview !== self || subviews.last !== ov {
-            ov.removeFromSuperview()
-            addSubview(ov)  // keep on top
-        }
-        ov.frame = bounds
-        ov.strokeColor = inkColor
-        ov.strokeWidth = max(1, lineWidth * scaleFactor)
-        ov.viewPoints = overlayPoints
-        ov.needsDisplay = true
-    }
-
     private func commitInk(on page: PDFPage) {
-        // Tight bounds + a path expressed RELATIVE to those bounds. A full
-        // `.mediaBox`-bounds ink annotation carrying absolute page-coordinate
-        // points strokes live but VANISHES on the next redraw under macOS 26 —
-        // PDFKit stopped building an appearance stream for that shape, so the
-        // ink is gone the moment the live overlay clears on mouseUp. Sizing the
-        // annotation to the stroke and offsetting the path into the annotation's
-        // local space yields a stable appearance that survives scroll/redraw.
+        // Tight bounds + path in the annotation's local space — the correct
+        // shape for a saved `.ink` annotation (this is what other PDF readers
+        // render). On-screen rendering is handled by the overlay, not this.
         let box = boundingBox(pagePoints, pad: max(lineWidth, 8))
         let annotation = PDFAnnotation(bounds: box, forType: .ink, withProperties: nil)
         let border = PDFBorder()
@@ -172,7 +192,8 @@ final class AnnotatingPDFView: PDFView {
         }
         annotation.add(path)
         page.addAnnotation(annotation)
-        records.append(StrokeRecord(page: page, annotation: annotation, bbox: box))
+        records.append(StrokeRecord(page: page, annotation: annotation, bbox: box,
+                                    points: pagePoints, color: inkColor, width: lineWidth))
     }
 
     private func eraseHit(_ p: CGPoint, on page: PDFPage) {
@@ -182,6 +203,35 @@ final class AnnotatingPDFView: PDFView {
         let removed = Set(hits.map { ObjectIdentifier($0.annotation) })
         records.removeAll { removed.contains(ObjectIdentifier($0.annotation)) }
         onEdited?()
+        refreshOverlay()
+    }
+
+    /// Rebuild the overlay's view-space geometry from the page-space records +
+    /// the live stroke, then repaint. Called on every draw event and on every
+    /// scroll / zoom so the ink stays pinned to the page.
+    @objc private func refreshOverlay() {
+        if strokeOverlay == nil {
+            let ov = StrokeOverlayView(frame: bounds)
+            ov.autoresizingMask = [.width, .height]
+            addSubview(ov)
+            strokeOverlay = ov
+        }
+        guard let ov = strokeOverlay else { return }
+        if ov.superview !== self || subviews.last !== ov {
+            ov.removeFromSuperview()
+            addSubview(ov)  // keep on top
+        }
+        ov.frame = bounds
+        ov.strokes = records.map { rec in
+            StrokeOverlayView.Stroke(points: rec.points.map { convert($0, from: rec.page) },
+                                     color: rec.color,
+                                     width: max(1, rec.width * scaleFactor))
+        }
+        ov.live = overlayPoints.isEmpty
+            ? nil
+            : StrokeOverlayView.Stroke(points: overlayPoints, color: inkColor,
+                                       width: max(1, lineWidth * scaleFactor))
+        ov.needsDisplay = true
     }
 
     private func boundingBox(_ points: [CGPoint], pad: CGFloat) -> CGRect {
@@ -196,34 +246,47 @@ final class AnnotatingPDFView: PDFView {
     }
 }
 
-/// Transparent overlay that strokes the in-progress line in the PDFView's
-/// own (view) coordinates for instant feedback. Returns nil from hitTest so
-/// all mouse events still reach the PDFView underneath.
+/// Transparent overlay that paints committed + in-progress ink in the
+/// PDFView's own (view) coordinates. We render the ink ourselves because
+/// macOS PDFKit no longer draws programmatic `.ink` annotations. Returns nil
+/// from hitTest so all mouse events still reach the PDFView underneath.
 final class StrokeOverlayView: NSView {
-    var viewPoints: [CGPoint] = []
-    var strokeColor: NSColor = .systemRed
-    var strokeWidth: CGFloat = 2
+    struct Stroke {
+        var points: [CGPoint]   // view coords
+        var color: NSColor
+        var width: CGFloat
+    }
+    /// Committed strokes, re-projected to view coords by the owner on each
+    /// scroll / zoom.
+    var strokes: [Stroke] = []
+    /// In-progress stroke (nil when not drawing).
+    var live: Stroke?
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
     override var isFlipped: Bool { false }
 
     override func draw(_ dirtyRect: NSRect) {
-        guard !viewPoints.isEmpty else { return }
+        for s in strokes { paint(s) }
+        if let live { paint(live) }
+    }
+
+    private func paint(_ s: Stroke) {
+        guard !s.points.isEmpty else { return }
+        if s.points.count == 1 {
+            let f = s.points[0]
+            let r = CGRect(x: f.x - s.width / 2, y: f.y - s.width / 2, width: s.width, height: s.width)
+            s.color.setFill()
+            NSBezierPath(ovalIn: r).fill()
+            return
+        }
         let path = NSBezierPath()
-        path.lineWidth = strokeWidth
+        path.lineWidth = s.width
         path.lineCapStyle = .round
         path.lineJoinStyle = .round
-        if viewPoints.count == 1 {
-            let f = viewPoints[0]
-            let r = CGRect(x: f.x - strokeWidth/2, y: f.y - strokeWidth/2, width: strokeWidth, height: strokeWidth)
-            strokeColor.setFill()
-            NSBezierPath(ovalIn: r).fill()
-        } else {
-            path.move(to: viewPoints[0])
-            for p in viewPoints.dropFirst() { path.line(to: p) }
-            strokeColor.setStroke()
-            path.stroke()
-        }
+        path.move(to: s.points[0])
+        for p in s.points.dropFirst() { path.line(to: p) }
+        s.color.setStroke()
+        path.stroke()
     }
 }
 #endif
