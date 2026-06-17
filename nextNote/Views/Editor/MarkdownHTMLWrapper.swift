@@ -155,8 +155,9 @@ enum MarkdownHTMLWrapper {
         }
         let absPath: String
         if lower.hasPrefix("file://") {
-            guard let url = URL(string: src) else { return nil }
-            absPath = url.path
+            var p = String(src.dropFirst("file://".count))
+            if p.hasPrefix("localhost") { p.removeFirst("localhost".count) }
+            absPath = p.removingPercentEncoding ?? p
         } else if src.hasPrefix("/") {
             absPath = src
         } else {

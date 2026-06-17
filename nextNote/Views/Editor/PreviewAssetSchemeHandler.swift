@@ -12,14 +12,51 @@ import WebKit
 /// the rendered HTML to `nextnote-asset://localhost<abs-path>` and serve
 /// the bytes here, with `Access-Control-Allow-Origin: *` so the
 /// cross-origin fetch is allowed.
+///
+/// Security: only paths under `projectRoot` or the per-note `noteDir` are
+/// served. Requests outside those roots fail with `.noPermissionsToReadFile`
+/// so a crafted note cannot exfiltrate arbitrary local files.
 final class PreviewAssetSchemeHandler: NSObject, WKURLSchemeHandler {
     static let scheme = "nextnote-asset"
+
+    /// The current project folder — set by ContentView when a project opens
+    /// or switches. Acts as the primary trust boundary for asset requests.
+    nonisolated(unsafe) static var projectRoot: URL?
+
+    /// Directory of the note being previewed. Allows images embedded in
+    /// notes opened outside the project (e.g. from a pinned folder) to
+    /// resolve correctly.
+    private let noteDir: URL?
+
+    init(noteDir: URL?) {
+        self.noteDir = noteDir
+        super.init()
+    }
 
     func webView(_ webView: WKWebView, start urlSchemeTask: WKURLSchemeTask) {
         guard let url = urlSchemeTask.request.url else {
             urlSchemeTask.didFailWithError(URLError(.badURL))
             return
         }
+
+        let target = URL(fileURLWithPath: url.path)
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+        let targetPath = target.path
+
+        let allowedRoots: [String] = [Self.projectRoot, noteDir]
+            .compactMap { $0 }
+            .map { $0.resolvingSymlinksInPath().standardizedFileURL.path }
+
+        let isAllowed = allowedRoots.contains { root in
+            targetPath == root || targetPath.hasPrefix(root + "/")
+        }
+
+        guard isAllowed else {
+            urlSchemeTask.didFailWithError(URLError(.noPermissionsToReadFile))
+            return
+        }
+
         let fileURL = URL(fileURLWithPath: url.path)
         do {
             let data = try Data(contentsOf: fileURL)

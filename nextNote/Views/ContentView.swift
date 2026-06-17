@@ -30,6 +30,7 @@ struct ContentView: View {
         rootView
         .onAppear {
             vault.adoptRoot(projectStore.current)
+            PreviewAssetSchemeHandler.projectRoot = projectStore.current
             backlinksIndex.wireToVault(vault)
             tagsIndex.wireToVault(vault)
         }
@@ -40,6 +41,7 @@ struct ContentView: View {
         }
         .onReceive(projectStore.$current) { url in
             vault.adoptRoot(url)
+            PreviewAssetSchemeHandler.projectRoot = url
         }
         // Defer MediaLibrary's bookmark resolution + file-exists prune off the
         // main thread — used to freeze launch when the library had >100 tracks.

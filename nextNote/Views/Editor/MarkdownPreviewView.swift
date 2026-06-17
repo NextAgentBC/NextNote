@@ -95,7 +95,7 @@ struct MarkdownWebView: NSViewRepresentable {
     func makeCoordinator() -> MarkdownPreviewCoordinator { MarkdownPreviewCoordinator() }
 
     func makeNSView(context: Context) -> WKWebView {
-        let webView = WKWebView(frame: .zero, configuration: makePreviewConfig())
+        let webView = WKWebView(frame: .zero, configuration: makePreviewConfig(noteDir: baseURL))
         webView.setValue(false, forKey: "drawsBackground")
         webView.navigationDelegate = context.coordinator
         context.coordinator.loadImmediately(in: webView, markdown: markdown, baseURL: baseURL)
@@ -114,7 +114,7 @@ struct MarkdownWebView: UIViewRepresentable {
     func makeCoordinator() -> MarkdownPreviewCoordinator { MarkdownPreviewCoordinator() }
 
     func makeUIView(context: Context) -> WKWebView {
-        let webView = WKWebView(frame: .zero, configuration: makePreviewConfig())
+        let webView = WKWebView(frame: .zero, configuration: makePreviewConfig(noteDir: baseURL))
         webView.isOpaque = false
         webView.backgroundColor = .clear
         webView.scrollView.backgroundColor = .clear
@@ -129,9 +129,9 @@ struct MarkdownWebView: UIViewRepresentable {
 }
 #endif
 
-private func makePreviewConfig() -> WKWebViewConfiguration {
+private func makePreviewConfig(noteDir: URL?) -> WKWebViewConfiguration {
     let config = WKWebViewConfiguration()
-    config.setURLSchemeHandler(PreviewAssetSchemeHandler(),
+    config.setURLSchemeHandler(PreviewAssetSchemeHandler(noteDir: noteDir),
                                forURLScheme: PreviewAssetSchemeHandler.scheme)
     return config
 }

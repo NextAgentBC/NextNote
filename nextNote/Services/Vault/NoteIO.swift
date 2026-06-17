@@ -1,5 +1,4 @@
 import Foundation
-import CryptoKit
 #if os(macOS)
 import AppKit
 #endif
@@ -32,11 +31,6 @@ enum NoteIO {
         )
         let data = Data(content.utf8)
         try data.write(to: url, options: [.atomic])
-    }
-
-    static func sha256(_ content: String) -> String {
-        let digest = SHA256.hash(data: Data(content.utf8))
-        return digest.map { String(format: "%02x", $0) }.joined()
     }
 
     static func fileModifiedAt(url: URL) -> Date {

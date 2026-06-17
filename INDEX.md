@@ -14,6 +14,20 @@ This index is the first stop when:
 
 ## Structural changes (newest first)
 
+- **2026-06-16 — Security + correctness sweep (review pass).** PDFKit ink
+  annotations (`Views/EPUB/PDFReaderAnnotation.swift`) now use tight bounds +
+  path-local coordinates — macOS 26 stopped rendering full-page ink appearance
+  streams, so freehand ink vanished on mouse-up. `PreviewAssetSchemeHandler` is
+  containment-checked: serves only files under `projectRoot` (set from
+  `ContentView` on adopt) or the previewed note's own dir, closing an
+  arbitrary-local-file read via crafted note `src`. `ProjectStore` releases the
+  security scope one runloop tick after `current` changes (was synchronous →
+  could truncate the per-project SwiftData flush on close/switch); `deinit`
+  dropped. `MarkdownHTMLWrapper` file:// rewrite tolerates spaces/unicode;
+  recents dedup on a standardized path. Redundancy: deleted dead `NoteIO.sha256`
+  (+ its `CryptoKit` import); `AppState+OpenExternal` hashing folded into
+  `BookHashing.fileSHA256`.
+
 - **2026-06-16 — Drawing input + PDF asset fixes.** `Views/Editor/DrawingDocumentView.swift`:
   the page canvas's draw drag is now `.highPriorityGesture` (was `.gesture`) — on
   macOS 26 the two-axis `ScrollView` swallows pointer drags once a page scrolls

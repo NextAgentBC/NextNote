@@ -142,28 +142,37 @@ final class AnnotatingPDFView: PDFView {
     }
 
     private func commitInk(on page: PDFPage) {
-        let annotation = PDFAnnotation(bounds: page.bounds(for: .mediaBox), forType: .ink, withProperties: nil)
+        // Tight bounds + a path expressed RELATIVE to those bounds. A full
+        // `.mediaBox`-bounds ink annotation carrying absolute page-coordinate
+        // points strokes live but VANISHES on the next redraw under macOS 26 —
+        // PDFKit stopped building an appearance stream for that shape, so the
+        // ink is gone the moment the live overlay clears on mouseUp. Sizing the
+        // annotation to the stroke and offsetting the path into the annotation's
+        // local space yields a stable appearance that survives scroll/redraw.
+        let box = boundingBox(pagePoints, pad: max(lineWidth, 8))
+        let annotation = PDFAnnotation(bounds: box, forType: .ink, withProperties: nil)
         let border = PDFBorder()
         border.lineWidth = lineWidth
         annotation.border = border
         annotation.color = inkColor
 
+        let origin = box.origin
+        let local = pagePoints.map { CGPoint(x: $0.x - origin.x, y: $0.y - origin.y) }
         let path = NSBezierPath()
         path.lineWidth = lineWidth
         path.lineCapStyle = .round
         path.lineJoinStyle = .round
-        if pagePoints.count == 1 {
-            let f = pagePoints[0]
+        if local.count == 1 {
+            let f = local[0]
             path.appendOval(in: CGRect(x: f.x - lineWidth / 2, y: f.y - lineWidth / 2,
                                        width: lineWidth, height: lineWidth))
         } else {
-            path.move(to: pagePoints[0])
-            for q in pagePoints.dropFirst() { path.line(to: q) }
+            path.move(to: local[0])
+            for q in local.dropFirst() { path.line(to: q) }
         }
         annotation.add(path)
         page.addAnnotation(annotation)
-        records.append(StrokeRecord(page: page, annotation: annotation,
-                                    bbox: boundingBox(pagePoints, pad: max(lineWidth, 8))))
+        records.append(StrokeRecord(page: page, annotation: annotation, bbox: box))
     }
 
     private func eraseHit(_ p: CGPoint, on page: PDFPage) {

@@ -33,7 +33,7 @@ enum PDFExporter {
         // The export WKWebView must register the same scheme handler or those
         // images 404 — blank in exported PDFs and in markdown-note Draw
         // backgrounds (which rasterize this PDF via `syncFromMarkdown`).
-        config.setURLSchemeHandler(PreviewAssetSchemeHandler(),
+        config.setURLSchemeHandler(PreviewAssetSchemeHandler(noteDir: baseURL),
                                    forURLScheme: PreviewAssetSchemeHandler.scheme)
         let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 800, height: 1100), configuration: config)
         let coordinator = ExportCoordinator(webView: webView,

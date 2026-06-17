@@ -1,6 +1,5 @@
 import Foundation
 import SwiftData
-import CryptoKit
 
 extension AppState {
     /// Routes a file URL passed in by Finder ("Open With NextNote", drag onto
@@ -107,19 +106,8 @@ extension AppState {
     }
 
     private func findBook(matching url: URL, in context: ModelContext) async throws -> Book? {
-        // Stream-hash off-MainActor — `Data(contentsOf:)` would load the
-        // full PDF/EPUB into RAM on the UI thread just to recompute a hash
-        // we only need for dedup lookup.
         let hash: String? = try? await Task.detached(priority: .userInitiated) {
-            let handle = try FileHandle(forReadingFrom: url)
-            defer { try? handle.close() }
-            var hasher = SHA256()
-            while true {
-                let chunk = try handle.read(upToCount: 1 << 16) ?? Data()
-                if chunk.isEmpty { break }
-                hasher.update(data: chunk)
-            }
-            return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+            try BookHashing.fileSHA256(url: url)
         }.value
         guard let hash else { return nil }
         let descriptor = FetchDescriptor<Book>(predicate: #Predicate { $0.contentHash == hash })

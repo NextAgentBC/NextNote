@@ -54,8 +54,9 @@ final class ProjectStore: ObservableObject {
         migrateLegacyRootsIfNeeded()
     }
 
-    deinit {
-        accessing?.stopAccessingSecurityScopedResource()
+    private func releaseScopeDeferred(_ url: URL?) {
+        guard let url else { return }
+        DispatchQueue.main.async { url.stopAccessingSecurityScopedResource() }
     }
 
     // MARK: - Open / close / switch
@@ -65,15 +66,19 @@ final class ProjectStore: ObservableObject {
     /// subdirectories, and bumps it to the top of the recents list.
     @discardableResult
     func open(url: URL) -> URL? {
-        accessing?.stopAccessingSecurityScopedResource()
+        let previous = accessing
         accessing = nil
-        guard url.startAccessingSecurityScopedResource() else { return nil }
+        guard url.startAccessingSecurityScopedResource() else {
+            releaseScopeDeferred(previous)
+            return nil
+        }
         accessing = url
 
         ensureSubdirectories(under: url)
 
         current = url
         recordRecent(url: url)
+        releaseScopeDeferred(previous)
         return url
     }
 
@@ -119,9 +124,10 @@ final class ProjectStore: ObservableObject {
     /// Close the current project. The App scene observes `current` and
     /// swaps the ContentView for the WelcomeView.
     func close() {
-        accessing?.stopAccessingSecurityScopedResource()
+        let previous = accessing
         accessing = nil
         current = nil
+        releaseScopeDeferred(previous)
     }
 
     func removeRecent(id: UUID) {
@@ -171,7 +177,7 @@ final class ProjectStore: ObservableObject {
             includingResourceValuesForKeys: nil,
             relativeTo: nil
         ) else { return }
-        let path = url.path(percentEncoded: false)
+        let path = url.resolvingSymlinksInPath().standardizedFileURL.path(percentEncoded: false)
         if let idx = recents.firstIndex(where: { $0.pathHint == path }) {
             recents[idx].bookmarkData = data
             recents[idx].lastOpenedAt = .now
