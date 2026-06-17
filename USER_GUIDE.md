@@ -51,28 +51,30 @@ See [README.md](README.md#quick-start). This path is for developers — if you'r
 
 ---
 
-## First launch — set up your folders
+## First launch — open a project
 
-On first launch NextNote shows a **Welcome** screen with four folders to configure:
+On first launch (and whenever no project is open) NextNote shows a **Welcome** screen titled **"Open a project"**:
 
-- **📝 Notes** — where your `.md` notes live
-- **🎵 Media** — music and videos
-- **📚 Ebooks** — `.epub` books
-- **🖼️ Assets** — visual scratch material (images / short clips / audio) you want to drop into notes
+- A **recents list** — click any entry to reopen that project folder. Click the **✕** beside an entry to remove it from recents.
+- **Open Existing Folder…** — pick any folder on disk. NextNote opens it as your project.
+- **New Project…** — create a new folder. NextNote opens it as your project.
 
-Three options:
+Once a project is open, NextNote automatically creates these subfolders inside it if they don't already exist:
 
-1. **"Use Defaults for All"** — NextNote creates four folders under `~/Documents/nextNote/` and you're done.
-2. **"Change…" on any row** — pick an existing folder. E.g. point Media at `~/Music`, or Ebooks at wherever you keep books.
-3. **Mix both** — defaults for some, existing folders for others.
+| Subfolder | Contents |
+|---|---|
+| `Media/` | music and videos |
+| `Ebooks/` | `.epub` books |
+| `Assets/` | images / clips / audio for embedding in notes |
+| `.nextnote/` | app database and caches (hidden) |
 
-Click **Start** and the main window opens.
+Your `.md` notes live anywhere in the project tree.
 
-> **Tip:** you can change Notes / Media / Ebooks roots later from the **Library** menu. The Assets folder lives at `~/Documents/nextNote/Assets/` by default.
+> **Tip:** to switch projects, use **Library → Open Existing Folder…** or **Library → New Project…**. Recent projects also appear at the top of that menu.
 
 ### Ambient Library (separate prompt)
 
-Right after folder setup, NextNote may ask *"Set up your ambient library?"* — this is a long-term home for the **ambient player** (a track collection separate from the Media folder tray). Click **Choose Folder…** to point it at your music root, or **Skip** and do it later via **Media → Set Ambient Library Folder…**.
+NextNote may ask *"Set up your ambient library?"* — this is a long-term home for the **ambient player** (a track collection separate from the Media tray). Click **Choose Folder…** to point it at your music root, or **Skip** and do it later via **Media → Set Ambient Library Folder…**.
 
 ---
 
@@ -536,15 +538,16 @@ Trigger manually: **AI → Run Daily Digest Now**.
 
 ## 🗂️ Library management
 
-The **Library** menu controls your three main library roots. (Assets is managed from the Media menu.)
+The **Library** menu controls your current project.
 
-- **Change Notes Folder… / Change Media Folder… / Change Ebooks Folder…** — move a root to a different path. Your files aren't moved; NextNote just scans the new location.
-- **Reveal Notes / Media / Ebooks in Finder** — opens the folder.
+- **Open Existing Folder…** — open a folder as a new current project.
+- **New Project…** — create a new folder and open it as the current project.
+- **Reveal Project in Finder** — opens the project folder.
 - **Rescan Library** (⌘R) — re-scans after you drop new files in.
 
-NextNote also **auto-rescans** every 15 seconds while the app is focused, and immediately when you Cmd-Tab back from another app — so new files generally show up on their own.
+To use a specific folder for media, drop it (or symlink it) inside your project's `Media/` subfolder. For example, to surface your entire music library, create a symlink: `ln -s ~/Music ~/Documents/myProject/Media/Music`.
 
-> **Tip:** set the Media root to `~/Music` and NextNote surfaces every track on your Mac.
+NextNote also **auto-rescans** every 15 seconds while the app is focused, and immediately when you Cmd-Tab back from another app — so new files generally show up on their own.
 
 ---
 
@@ -576,9 +579,7 @@ API keys are stored in the macOS **Keychain**, never in plaintext on disk.
 
 ### Vault
 
-- **Enable vault mode** — switch the sidebar from the flat SwiftData list to the folder tree (recommended)
-- **Change Vault…** / **Forget Vault**
-- **Rescan** button
+- **Rescan** button — manually re-index the current project tree.
 
 ### Sync
 
@@ -667,7 +668,7 @@ Everything is local:
 `xattr -dr com.apple.quarantine /Applications/NextNote.app`
 
 **"Could not access …" on a folder.**
-The saved security-scoped bookmark went stale (you moved / renamed the folder). **Library menu → Change <Kind> Folder…** and re-pick.
+The saved security-scoped bookmark went stale (you moved / renamed the project folder). Use **Library → Open Existing Folder…** and re-pick the folder.
 
 **Terminal says `command not found: brew` right after installing Homebrew.**
 You skipped the "Next steps" block Homebrew printed (the two `echo` lines). Scroll up in Terminal, find it, copy and paste the whole block. Then close Terminal (⌘Q) and reopen it. See [Step 0 of the YouTube section](#step-0--install-homebrew-skip-if-you-already-have-it).

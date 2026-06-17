@@ -21,16 +21,16 @@ Open-source friendly: no telemetry, no cloud account, user data lives on disk as
 ### Design principles
 
 - **Local-first, file-first.** Notes are plain Markdown on disk. No proprietary database.
-- **Three separate roots.** Notes / Media / Ebooks each live in their own folder, configured at first launch.
+- **One project = one folder.** Notes, Media, Ebooks, and Assets all live under a single project folder. `ProjectStore` holds the current project URL and a recents list persisted to `~/Library/Application Support/NextNote/recents.json`.
 - **Provider-agnostic AI.** Swap MLX ↔ remote via Settings; same feature set.
 - **Zero telemetry, zero account.**
-- **Sandboxed**, security-scoped bookmarks for each chosen folder.
+- **Sandboxed**, one security-scoped bookmark per project.
 
 ### Platform
 
 - **macOS 14.0+** (Sonoma or later).
 - Apple Silicon strongly preferred (MLX on-device models require it).
-- Swift 6.0 / Xcode 16.0+.
+- Swift 6.0 / Xcode 26.0+.
 
 ---
 
@@ -39,10 +39,14 @@ Open-source friendly: no telemetry, no cloud account, user data lives on disk as
 ### Required
 
 - **macOS 14+** on Apple Silicon (Intel works for everything *except* MLX on-device models).
-- **Xcode 16+** (includes the Swift 6 compiler and macOS 14 SDK).
+- **Xcode 26+** (includes the Swift 6 compiler and macOS 14 SDK).
 - **xcodegen** — project file generator:
   ```sh
   brew install xcodegen
+  ```
+- **Metal Toolchain** — Metal moved to a downloadable component; run once if `make build` fails with "missing Metal Toolchain":
+  ```sh
+  xcodebuild -downloadComponent MetalToolchain
   ```
 
 ### Optional — enable specific features
@@ -94,17 +98,14 @@ xattr -dr com.apple.quarantine /Applications/nextNote.app
 
 ## 4. First-Run Setup
 
-On first launch, the **Library Setup** screen appears. Pick (or accept defaults for) three folders:
+On first launch (and whenever no project is open), `WelcomeView` appears, titled **"Open a project"**. It shows a recents list — click any recent entry to reopen it, or click the ✕ beside an entry to remove it. Two buttons at the bottom:
 
-```
-📝 Notes    ~/Documents/nextNote/Notes
-🎵 Media    ~/Documents/nextNote/Media
-📚 Ebooks   ~/Documents/nextNote/Ebooks
-```
+- **Open Existing Folder…** — opens a folder picker; the selected folder becomes the current project.
+- **New Project…** — opens a save panel; the new folder becomes the current project.
 
-Click **Use Defaults for All** + **Start** to create the three subfolders under `~/Documents/nextNote/`, or click **Change…** on any row to pick an existing folder (e.g. `~/Music` for Media).
+On open, `ProjectStore` stores a security-scoped bookmark for the project folder and appends it to the recents list in `~/Library/Application Support/NextNote/recents.json`. The app then calls `VaultStore.adoptRoot(projectStore.current)` to scan the project tree into the sidebar, and auto-creates `Media/`, `Ebooks/`, `Assets/`, and `.nextnote/` inside the project folder if they do not exist. The SwiftData database (`library.store`) lives at `<project>/.nextnote/library.store`.
 
-Each folder is opened with a **security-scoped bookmark**, persisted to UserDefaults so sandbox access survives app launches. You can change any root later via the **Library** menu.
+There is no "Library Setup" screen and no vault-mode toggle — the app is always project-based.
 
 ---
 
@@ -115,7 +116,7 @@ Each folder is opened with a **security-scoped bookmark**, persisted to UserDefa
 | **File** | Save (⌘S), Open File… (⌘O), New Tab (⌘T), Close Tab (⌘W) |
 | **Edit** | Find… (⌘F) |
 | **View** | Toggle Sidebar (⌘1), Preview Mode picker, Enter Focus Mode (⌘⇧\\) |
-| **Library** | Change Notes/Media/Ebooks Folder…, Reveal in Finder, Rescan Library (⌘R) |
+| **Library** | Open Existing Folder…, New Project…, Switch Project, Reveal Project in Finder, Rescan Library (⌘R) |
 | **Media** | Play / Pause (⌥Space), Next / Previous (⌘⌥←/→), Media Library (⌘⇧M), Video Vibe Window, Ambient Library Folder, Download from YouTube… |
 | **AI** | Rebuild Dashboards (⌘⇧R), Run Daily Digest, Summarize (⌘⌥S), Polish, Continue, Translate, Grammar Check |
 
@@ -149,8 +150,8 @@ nextNote/
 ```
 NextNoteApp (@main)
 ├── @StateObject appState        AppState            — tabs, flags, triggers
-├── @StateObject vaultStore      VaultStore          — Notes file tree
-├── @StateObject libraryRoots    LibraryRoots        — 3 root URLs + bookmarks
+├── @StateObject projectStore    ProjectStore        — current project URL + recents
+├── @StateObject vaultStore      VaultStore          — project file tree
 ├── @StateObject mediaCatalog    MediaCatalog        — music + video scan
 ├── ModelContainer (SwiftData)   NextNoteSchemaV3    — books, notes index, chat, etc.
 │
@@ -185,9 +186,8 @@ NextNoteApp (@main)
 #### `Services/Vault/`
 | File | Purpose |
 |---|---|
-| `VaultStore.swift` | Scans Notes root into a `FolderNode` tree. CRUD via `NoteIO`. Single root; LibraryRoots owns the URL. |
-| `LibraryRoots.swift` | Three independent roots (Notes / Media / Ebooks) + bookmark persistence + `pick(kind:)` + defaults. |
-| `VaultBookmark.swift` | Legacy single-root bookmark (kept for migration). |
+| `ProjectStore.swift` | Single source of truth: current project URL, security-scoped bookmark, recents list persisted to `~/Library/Application Support/NextNote/recents.json`. |
+| `VaultStore.swift` | Scans the project tree into a `FolderNode` tree. CRUD via `NoteIO`. Adopted via `VaultStore.adoptRoot(projectStore.current)`. |
 | `NoteIO.swift` | Atomic `.md` read / write, sanitized filenames, SHA256, trash-based delete. |
 
 #### `Services/EPUB/`
@@ -251,10 +251,10 @@ Dashboard view = pinned notes + AI-rolled summaries. Hands off to `AITextService
 
 | Area | Files | Notes |
 |---|---|---|
-| `Views/ContentView.swift` | Main window: `NavigationSplitView { sidebar } detail: { editor }` | Gates on `libraryRoots.isConfigured`; falls back to `LibrarySetupView` |
-| `Views/Setup/` | `LibrarySetupView` | First-run folder chooser |
+| `Views/ContentView.swift` | Main window: `NavigationSplitView { sidebar } detail: { editor }` | Gates on `projectStore.current`; falls back to `WelcomeView` |
+| `Views/Setup/` | `WelcomeView` | Shown when no project is open — recents list + Open / New buttons |
 | `Views/Sidebar/` | `LibrarySidebar` + `BooksSection` + `NotesSection` + `ExtraMediaPlayer` | Notes tree top (flex), Ebooks + Media collapsible trays bottom |
-| `Views/Vault/` | `VaultTreeView` + `VaultPickerView` | Folder + file tree, rename / create / move via context menu |
+| `Views/Vault/` | `VaultTreeView` | Folder + file tree, rename / create / move via context menu |
 | `Views/Editor/` | `EditorView` + `MarkdownPreviewView` + `MarkdownToolbar` + `MarkdownHighlighter` | NSTextView wrapper with Markdown syntax highlight + WKWebView preview |
 | `Views/EPUB/` | `EPUBReaderView` + `EPUBContentWebView` + `EPUBReaderHost` + `BookLibraryView` | WKWebView-based chapter reader, JS bridge for selection + paging |
 | `Views/AI/` | `AIChatPanelView` + `AIActionPanel` + provider pickers | Per-note chat + quick actions |
@@ -277,14 +277,14 @@ Dashboard view = pinned notes + AI-rolled summaries. Hands off to `AITextService
 
 ### 8.1 Notes
 
-- Notes live as plain `.md` files under `<notesRoot>/`. Real folders become tree groups. Rename on disk = delete + insert (reconciled on rescan).
+- Notes live as plain `.md` files anywhere in the project tree. Real folders become tree groups. Rename on disk = delete + insert (reconciled on rescan).
 - `VaultStore.scan()` walks the tree, caps at 10 000 nodes, skips `.git` / `node_modules` / `.nextnote`. Only shows `.md` + images — binary / audio / video / epub go to their own sidebar sections.
 - Each open note = one tab (`TabItem` in `AppState.openTabs`). Saves fire on Cmd+S, auto-save timer, and scene inactive.
 - Atomic writes via `NoteIO.write(url:content:)`.
 
 ### 8.2 EPUB Reader
 
-- Books land in `<ebooksRoot>/`. `BookLibrary.scan()` registers every `.epub` via `EPUBImporter.registerExisting` (hash-dedupe by `SHA256(epubBlob)`).
+- Books land in `<project>/Ebooks/`. `BookLibrary.scan()` registers every `.epub` via `EPUBImporter.registerExisting` (hash-dedupe by `SHA256(epubBlob)`).
 - `EPUBParser` unzips to `~/Library/Caches/nextNote/Books/<bookID>/` (never the vault — the OS can nuke Caches anytime; we regenerate on demand).
 - `EPUBParser` reads `META-INF/container.xml` → OPF → manifest + spine + NCX (EPUB 2) or `nav.xhtml` (EPUB 3).
 - Reader = `EPUBContentWebView` (`WKWebView`) with a JS bridge:
@@ -299,7 +299,7 @@ Dashboard view = pinned notes + AI-rolled summaries. Hands off to `AITextService
 
 ### 8.3 Media (Music + Video)
 
-- `MediaCatalog.scan(mediaRoot:)` walks `<mediaRoot>/` on `.task(id: vault.root)` and after any `libraryRoots` change.
+- `MediaCatalog.scan(mediaRoot:)` walks `<project>/Media/` on `.task(id: vault.root)` and after any project change.
 - Audio extensions: `mp3 m4a wav aac flac ogg`. Video: `mp4 mov m4v webm`. Edit `MediaKind.swift` to extend.
 - Sidebar click:
   - Music → `AmbientPlayer.shared.playURL(url)`. Ad-hoc one-off Track, not persisted.
@@ -333,9 +333,9 @@ Requires `yt-dlp` (and optionally `ffmpeg`) installed.
 3. Paste URL or search query → `YTDLPDownloader.download(url:dest:mode:quality:ffmpeg:)` — sandboxed Process launch with `--no-playlist`, `--add-metadata`, etc.
 4. Audio mode without ffmpeg → m4a. With ffmpeg → mp3 V0 VBR.
 5. Video mode: mp4, quality picker (best / 1080p / 720p / 480p). Without ffmpeg effectively capped at 720p.
-6. On success: file lands in `<mediaRoot>/` (default `~/Documents/nextNote/Media/`), gets registered with `MediaLibrary`, sidebar rescan picks it up.
+6. On success: file lands in `<project>/Media/`, gets registered with `MediaLibrary`, sidebar rescan picks it up.
 
-**How the process talks to the sandboxed app**: both `yt-dlp` and `ffmpeg` are launched via `Process` with an explicit `executableURL`; the destination folder is inside the user-granted security-scoped bookmark (`libraryRoots.mediaRoot`), so the subprocess can write there.
+**How the process talks to the sandboxed app**: both `yt-dlp` and `ffmpeg` are launched via `Process` with an explicit `executableURL`; the destination folder is inside the project's `Media/` subfolder, covered by the project's security-scoped bookmark (`projectStore.subdir(.media)`), so the subprocess can write there.
 
 ### 8.6 Per-Note Chat
 
@@ -345,7 +345,7 @@ Requires `yt-dlp` (and optionally `ffmpeg`) installed.
 
 ### 8.7 Daily Digest
 
-- `DailyDigestService.generateIfDue()` fires once per calendar day, in vault mode, when a remote provider is configured.
+- `DailyDigestService.generateIfDue()` fires once per calendar day, when a project is open and a remote provider is configured.
 - Scans recent vault notes, groups by `contentHash` changes, asks the model for a 1-paragraph rollup, writes it to `<vault>/_digest/YYYY-MM-DD.md`.
 
 ---
@@ -478,26 +478,27 @@ There is no test target yet. Highest-value candidates when someone wants to add 
 
 ### File Paths
 
-| Kind | Default |
+| Kind | Path |
 |---|---|
-| Notes | `~/Documents/nextNote/Notes/` |
-| Media | `~/Documents/nextNote/Media/` |
-| Ebooks | `~/Documents/nextNote/Ebooks/` |
-| Chat sidecars | `<notesRoot>/.nextnote/chats/` |
-| AI summary cache | `<notesRoot>/.nextnote/cache.json` |
+| Project root (example) | any folder the user picks |
+| Notes | `.md` files anywhere in `<project>/` |
+| Media | `<project>/Media/` |
+| Ebooks | `<project>/Ebooks/` |
+| Assets | `<project>/Assets/` |
+| SwiftData store | `<project>/.nextnote/library.store` |
+| Chat sidecars | `<project>/.nextnote/chats/` |
+| AI summary cache | `<project>/.nextnote/cache.json` |
+| Recents list | `~/Library/Application Support/NextNote/recents.json` |
 | EPUB unzip workspace | `~/Library/Caches/nextNote/Books/<bookID>/` |
-| SwiftData store | `~/Library/Containers/com.nextnote.app/Data/Library/Application Support/default.store` |
 | MLX model cache | `~/Library/Application Support/<bundle>/models/` |
 | Build output | `./build.nosync/` |
 
-### UserDefaults Keys (for debugging)
+### UserDefaults / Persistence Keys (for debugging)
 
-- `libraryRoot_notes` / `libraryRoot_media` / `libraryRoot_ebooks` — security-scoped bookmark blobs
-- `vaultBookmark` — legacy single-root (migrated on first launch)
-- `ambientAudioFolder` — legacy ambient library bookmark
+- `~/Library/Application Support/NextNote/recents.json` — project recents list (URL + security-scoped bookmark per entry), managed by `ProjectStore`
+- `ambientAudioFolder` — ambient library bookmark (separate from the project)
 - `ytdlp.binaryPath` / `ytdlp.ffmpegPath`
 - `aiProviderType` / `remoteBaseURL` / `remoteModelId` / `geminiModelId`
-- `vaultMode` (true by default in current builds)
 
 Reset to pristine state:
 

@@ -6,7 +6,7 @@
 [![Release](https://img.shields.io/github/v/release/NextAgentBC/NextNote?include_prereleases)](https://github.com/NextAgentBC/NextNote/releases)
 [![Stars](https://img.shields.io/github/stars/NextAgentBC/NextNote?style=social)](https://github.com/NextAgentBC/NextNote)
 
-Local-first macOS app for Markdown notes, EPUB reading, and media playback. Three separate on-disk roots (Notes / Media / Ebooks), multi-provider AI (on-device MLX + remote OpenAI-compatible + Gemini), optional YouTube downloads via `yt-dlp`. No account, no telemetry. macOS 14+.
+Local-first macOS app for Markdown notes, EPUB reading, and media playback. One project folder on disk — open any folder as a project; `Media/`, `Ebooks/`, `Assets/`, and `.nextnote/` subdirectories are created automatically. Multi-provider AI (on-device MLX + remote OpenAI-compatible + Gemini), optional YouTube downloads via `yt-dlp`. No account, no telemetry. macOS 14+.
 
 - End-user docs → **[USER_GUIDE.md](USER_GUIDE.md)**
 - Contributor / architecture reference → **[TUTORIAL.md](TUTORIAL.md)**
@@ -36,7 +36,7 @@ make build                       # xcodegen + xcodebuild + ad-hoc sign
 make run                         # launch nextNote.app
 ```
 
-First launch: pick (or accept defaults for) three folders — Notes, Media, Ebooks — under `~/Documents/nextNote/`. Everything else is configured from **Settings** and **Library** menu.
+First launch shows a **Welcome** screen ("Open a project") with a recents list and two buttons: **Open Existing Folder…** and **New Project…**. Pick or create a folder; the app opens it as the current project and auto-creates `Media/`, `Ebooks/`, `Assets/`, and `.nextnote/` inside it. Everything else is configured from **Settings** and **Library** menu.
 
 ## Features
 
@@ -52,8 +52,8 @@ First launch: pick (or accept defaults for) three folders — Notes, Media, Eboo
 - **AI summarize.** ⌥⌘S streams a 3-5 bullet summary of the active note. Uses the same provider stack as inline AI tools.
 - **Tab jumps.** ⌘1…⌘8 jump straight to tab N; ⌘9 jumps to the last tab.
 - **Reading time.** Status bar shows estimated reading time (200 wpm) + unsaved-changes dot.
-- **Ebooks.** `.epub` reader inline: TOC, page turn (click edge / arrows / space), highlights, fonts, themes. Auto-scanned from the Ebooks root.
-- **Media.** Music and video auto-scanned from the Media root. Click a track → `AmbientPlayer` starts; click a video → inline `MediaPlayerView`.
+- **Ebooks.** `.epub` reader inline: TOC, page turn (click edge / arrows / space), highlights, fonts, themes. Auto-scanned from the project's `Ebooks/` subfolder.
+- **Media.** Music and video auto-scanned from the project's `Media/` subfolder. Click a track → `AmbientPlayer` starts; click a video → inline `MediaPlayerView`.
 - **Drawing notes.** Handwriting / sketch notes (`.nndraw`) stored as re-editable JSON in the vault — ink strokes across multiple pages, each with an optional full-page background (an imported PDF page render or a pasted screenshot) plus free-floating placed images **and embedded YouTube videos** (thumbnail cards you play in place, move, and resize). Lasso tool to multi-select strokes (move / delete / recolor), optional **shape recognition** (rough line / box / circle / triangle → clean geometry), and smoothed ink rendering. Reopen and keep editing the raw strokes anytime, or **export the drawing to a multi-page PDF** (⇧⌘E) — one page per drawing page, ink kept as crisp vector, with embedded videos becoming clickable links.
 - **PDF.** Inline PDF reader with outline TOC and page navigation; markup pages and send a page into a drawing note for annotation.
 - **AI.** Polish / summarize / translate / grammar / continue writing. Swap providers in Settings — MLX on-device, remote OpenAI-compatible (Ollama, vLLM, LM Studio, any HTTP endpoint), or Google Gemini (free tier with automatic key rotation).
@@ -105,7 +105,7 @@ nextNote/
 │   │   ├── EPUB/            parser + importer + book-library scanner
 │   │   ├── Media/           MediaCatalog (music + video scan for sidebar)
 │   │   ├── Security/        Keychain
-│   │   └── Vault/           LibraryRoots + VaultStore + NoteIO
+│   │   └── Vault/           ProjectStore + VaultStore + NoteIO
 │   ├── Views/               SwiftUI — grouped by feature
 │   ├── Utilities/           menu commands
 │   └── Resources/           Info.plist, Assets.xcassets
