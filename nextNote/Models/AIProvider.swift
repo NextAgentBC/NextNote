@@ -30,7 +30,11 @@ struct AIProvider: Codable, Identifiable, Hashable {
         chatModel: "chat",
         embedBaseURL: URL(string: "http://100.79.97.110:8800/v1/proxy/local-embed")!,
         embedModel: "qwen3-embed-8b",
-        vectorDSN: "postgresql://hermes:hermes_memory_2026@100.79.97.110:5433/hermes_memory",
+        // No password in source — this repo is public. Store the full DSN in
+        // Keychain once and VectorDBSettings uses it in place of this default:
+        //   security add-generic-password -U -s com.nextnote.app -a vectorDSN \
+        //     -w 'postgresql://hermes:<password>@100.79.97.110:5433/hermes_memory'
+        vectorDSN: "postgresql://hermes@100.79.97.110:5433/hermes_memory",
         requiresAPIKey: false
     )
 
